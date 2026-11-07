@@ -2553,6 +2553,8 @@ static void list_change_do(int32_t e)
         case A_PRESET: ui.pick_preset = (uint16_t)((ui.pick_preset + d + NPRESETS) % (NPRESETS ? NPRESETS : 1)); break;
         case A_SAVE_PRESET: ui.pick_slot = (uint8_t)((ui.pick_slot + d + NUSER_PRESETS) % NUSER_PRESETS); break;
         case A_KIT: ui.pick_kit = (uint8_t)((ui.pick_kit + d + NKITS) % NKITS); break;
+        case A_BEAT: ui.pick_beat = (uint8_t)((ui.pick_beat + d + lib_nbeats()) % lib_nbeats()); break;
+        case A_PROG: ui.pick_prog = (uint8_t)((ui.pick_prog + d + lib_nprogs()) % lib_nprogs()); break;
         case A_SAVE_KIT: ui.pick_kslot = (uint8_t)((ui.pick_kslot + d + NUSER_KITS) % NUSER_KITS); break;
         case A_LOAD_PROJ: ui.pick_slot = (uint8_t)((ui.pick_slot + d + NPROJ) % NPROJ); break;
         case A_SAVE_TO: ui.pick_save = (uint8_t)((ui.pick_save + d + NPROJ) % NPROJ); break;
@@ -2678,6 +2680,36 @@ static void list_change(int32_t e)               /* a SEL list row changed by ha
     cc_hand = 1;
     list_change_do(e);                            /* (calls knob() for LK_KNOB rows: its own wrapper leaves cc_hand be) */
     cc_hand = was;
+}
+/* the library (library.c): a beat onto the kit track's pattern, a progression onto the conductor's */
+static void act_beat(int i)
+{
+    int trk = sel_trk();
+    tpat_t *tp;
+    if (!is_drum(trk))
+        return;
+    tp = tpat(trk);
+    undo_keep();
+    for (int k = 0; k < NLANE; k++)                /* (the steps' own notes go with the steps: tunes, sound velocities) */
+        if (pats.lane[k].used && pats.lane[k].trk == trk && pats.lane[k].pat == cur_pat(trk) &&
+            lane_is_note(pats.lane[k].param))
+            lane_clear(pats.lane, k);
+    lib_beat_load(tp, i);
+    mark_dirty();
+    say("BEAT", lib_beat_name(i));
+}
+static void act_prog(int i)
+{
+    tpat_t *tp;
+    int key;
+    if (sel_trk() != AUX_BRAIN)
+        return;
+    tp = tpat(AUX_BRAIN);
+    key = proj.trk[AUX_BRAIN].par[TP_E2] % 12;
+    undo_keep();
+    set_tp(AUX_BRAIN, TP_E3, lib_prog_load(tp, i, key));
+    mark_dirty();
+    say("PROGRESSION", lib_prog_name(i));
 }
 static void act_clear_notes(void)
 {
@@ -3668,6 +3700,8 @@ static void action_run(int a)
     case A_SCRAMBLE: act_scramble(); say("SCRAMBLED", 0); break;
     case A_SAVE_PRESET: act_save_preset(ui.pick_slot % NUSER_PRESETS); return;
     case A_KIT: act_kit(ui.pick_kit % NKITS); break;
+    case A_BEAT: act_beat(ui.pick_beat); break;
+    case A_PROG: act_prog(ui.pick_prog); break;
     case A_SAVE_KIT: act_save_kit(ui.pick_kslot % NUSER_KITS); return;
     case A_INIT:
         undo_sound(sel_trk());

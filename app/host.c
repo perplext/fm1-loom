@@ -1108,6 +1108,39 @@ static int song_cmd(const char *cmd)
             tp->groove = (int8_t)atoi(w[6]);
         if (n > 7)
             tp->shape = (uint8_t)atoi(w[7]);
+    } else if (!strcmp(cmd, "beat")) {              /* beat T PAT NAME|INDEX: a library beat onto a kit pattern */
+        tpat_t *tp = pat_or_die(w[1], w[2]);
+        int i = -1, j;
+        if (n < 4)
+            host_die("beat T PAT NAME", "");
+        for (j = 0; j < lib_nbeats() && i < 0; j++)
+            if (ieq(w[3], lib_beat_name(j)))
+                i = j;
+        if (i < 0 && w[3][0] >= '0' && w[3][0] <= '9')
+            i = atoi(w[3]);
+        if (i < 0)
+            host_die("no such beat", w[3]);
+        lib_beat_load(tp, i);
+    } else if (!strcmp(cmd, "prog")) {              /* prog NAME|INDEX [KEY]: a library progression onto the conductor */
+        tpat_t *tp = &pats.pat[AUX_BRAIN][cur_pat(AUX_BRAIN)];
+        int i = -1, j, key = n > 2 ? note_of(w[2]) % 12 : proj.trk[AUX_BRAIN].par[TP_E2] % 12;
+        if (n < 2)
+            host_die("prog NAME [KEY]", "");
+        for (j = 0; j < lib_nprogs() && i < 0; j++)
+            if (ieq(w[1], lib_prog_name(j)))
+                i = j;
+        if (i < 0 && w[1][0] >= '0' && w[1][0] <= '9')
+            i = atoi(w[1]);
+        if (i < 0)
+            host_die("no such progression", w[1]);
+        proj.trk[AUX_BRAIN].par[TP_E3] = (uint8_t)lib_prog_load(tp, i, key);
+        proj.trk[AUX_BRAIN].par[TP_E2] = (uint8_t)key;
+        engine_set_all(AUX_BRAIN);
+    } else if (!strcmp(cmd, "libs")) {              /* libs: the library's beats and progressions */
+        for (int j = 0; j < lib_nbeats(); j++)
+            printf("  beat %2d %-10s %s\n", j, lib_beat_genre(j), lib_beat_name(j));
+        for (int j = 0; j < lib_nprogs(); j++)
+            printf("  prog %2d %-10s %s (%s)\n", j, lib_prog_genre(j), lib_prog_name(j), BS_NAME[lib_prog_scale(j)]);
     } else if (!strcmp(cmd, "hits")) {              /* hits T PAT SOUND STRING... */
         tpat_t *tp = pat_or_die(w[1], w[2]);
         int snd = atoi(w[3]), s = 0;

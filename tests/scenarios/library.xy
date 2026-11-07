@@ -1,0 +1,37 @@
+# the library (library.c): a beat onto a kit pattern and a progression onto the conductor from the host, the pad
+# following it, then the Steps list: BEAT turned with ALGO and loaded with SEL
+wait 200
+
+master 4096
+bpm 150
+beat 1 1 doom
+steps 1 1
+prog phrygian_5ths E
+steps 9 1
+expect par9.e3 5
+expect note 9 1 1 64
+expect note 9 1 5 65
+expect note 9 1 9 62
+expect note 9 1 13 60
+# T2 follows the conductor with harmony: a held pad moves with the chords
+preset 2 doom_wall wall
+knob 2 brain harmony
+pat 2 1 64 1 100 0
+notes 2 1 1 64 100 E2 B2 E3
+stats reset
+tap PLAY
+bars 4
+tap PLAY
+# the panel: on the kit track, SEL opens the list; the BEAT row turns through the library and loads on press
+expect trk 1
+tap SEL
+wait 60
+shot lib_sel.png
+# the BEAT row: ALGO turns through the library, SEL loads
+spin ALGO 12
+wait 40
+shot lib_sel2.png
+tap SEL
+wait 60
+shot lib_loaded.png
+steps 1 1

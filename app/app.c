@@ -8,6 +8,7 @@
 #include "gfx_loom.c"
 #include "engine.c"
 #include "project.c"
+#include "library.c"
 #include "pages.c"
 #include "ui.c"
 #include "midicc.c"

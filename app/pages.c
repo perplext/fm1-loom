@@ -260,6 +260,7 @@ static struct {
     uint16_t preset_i, pick_preset;               /* (more than 255 presets and user slots) */
     uint8_t pick_engine, pick_slot, pick_fx, pick_weave, pick_save;   /* (pick_save: SAVE TO's slot) */
     uint8_t pick_kit, pick_kslot;                    /* a kit track's KIT (0..3 factory, 4.. user) and SAVE KIT */
+    uint8_t pick_beat, pick_prog;                    /* the library's BEAT (a kit track) and PROGRESSION (the conductor) */
     uint8_t pick_bt;                                 /* Bluetooth audio's FORGET: the remembered device */
     uint8_t pick_clear, pick_paste;
     int8_t pick_shift, pick_rot;                     /* SHIFT NOTES' semitones (-24..24) and ROTATE's steps (-16 left ..
@@ -286,7 +287,7 @@ enum { A_CLEAR_NOTES, A_CLEAR_LOCKS, A_CLEAR_BOTH, A_COPY_PAT, A_PASTE_PAT, A_RO
        A_KIT, A_SAVE_KIT, A_MIDI_CC, A_USB_HOST, A_BT_MIDI, A_BT_AUDIO, A_BT_ADEV, A_BT_DEVICE, A_BT_DEV, A_BT_LOOK,
        A_BT_FORGET, A_BT_DISCONNECT, A_CLEAR, A_ROTATE, A_PASTE, A_COPY_EMPTY, A_CLEAR_BAR,
        A_COPY_SOUND, A_PASTE_SOUND, A_COPY_KEY, A_PASTE_KEY, A_COPY_SCENE, A_PASTE_SCENE, A_DUP_SLOT, A_KIT_FILTER,
-       A_SHIFT, A_LARGE_TYPE, A_CC_IN, A_FX_WIDTH, NACTIONS };
+       A_SHIFT, A_LARGE_TYPE, A_CC_IN, A_FX_WIDTH, A_BEAT, A_PROG, NACTIONS };
 static const char *const ACTION_NAME[NACTIONS] = {
     "CLEAR NOTES", "CLEAR LOCKS", "CLEAR NOTES AND LOCKS", "COPY PATTERN", "PASTE PATTERN", "ROTATE FORWARD",
     "ROTATE BACK", "DUPLICATE BAR", "ENGINE", "PRESET", "SCRAMBLE", "SAVE AS PRESET", "RESET SOUND", "FOLLOWS CONDUCTOR",
@@ -297,7 +298,8 @@ static const char *const ACTION_NAME[NACTIONS] = {
     "PASTE LOCKS ONLY", "DOUBLE PATTERN", "CLEAR LOCKS", "CC OUT", "SCENES OUT", "KIT", "SAVE KIT", "KNOB CC",
     "USB PORT", "BT MIDI", "BT AUDIO", "AUDIO DEVICE", "MIDI DEVICE", "DEVICE", "LOOK AGAIN", "FORGET", "DISCONNECT",
     "CLEAR", "ROTATE", "PASTE", "COPY TO EMPTY", "CLEAR BAR", "COPY SOUND", "PASTE SOUND", "COPY DRUM", "PASTE DRUM",
-    "COPY SCENE", "PASTE SCENE", "DUPLICATE SLOT", "KIT FILTER", "SHIFT NOTES", "LARGE TYPE", "CC IN", "PING WIDTH"};
+    "COPY SCENE", "PASTE SCENE", "DUPLICATE SLOT", "KIT FILTER", "SHIFT NOTES", "LARGE TYPE", "CC IN", "PING WIDTH",
+    "BEAT", "PROGRESSION"};
 static const char *const CLEAR_WHAT[3] = {"notes", "locks", "notes and locks"};
 /* a pick ALGORITHM sets at once (a setting: SEL only leaves the list), as against a choice SEL then carries out */
 static int pick_sets(int a)
@@ -2798,6 +2800,15 @@ static void list_steps(int trk)
     static char empty_t[16], bar_t[8], rot_t[8], sh_t[8];
     int to = pat_first_empty(trk), paste = clip_ok && clip_kind != CK_STEP;   /* (a step pastes onto steps held) */
     list_head("pattern");
+    if (is_drum(trk)) {                               /* the library's beats, by genre */
+        static char beat_t[28];
+        s_cat(s_cat(s_cat(beat_t, lib_beat_genre(ui.pick_beat)), ": "), lib_beat_name(ui.pick_beat));
+        list_add(ACTION_NAME[A_BEAT], beat_t, LK_PICK, A_BEAT);
+    } else if (trk == AUX_BRAIN) {                    /* and its progressions */
+        static char prog_t[28];
+        s_cat(s_cat(s_cat(prog_t, lib_prog_genre(ui.pick_prog)), ": "), lib_prog_name(ui.pick_prog));
+        list_add(ACTION_NAME[A_PROG], prog_t, LK_PICK, A_PROG);
+    }
     if (to >= 0)
         num_s((uint32_t)to + 1u, s_cat(empty_t, "P"));
     else
