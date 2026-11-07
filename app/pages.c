@@ -260,7 +260,7 @@ static struct {
     uint16_t preset_i, pick_preset;               /* (more than 255 presets and user slots) */
     uint8_t pick_engine, pick_slot, pick_fx, pick_weave, pick_save;   /* (pick_save: SAVE TO's slot) */
     uint8_t pick_kit, pick_kslot;                    /* a kit track's KIT (0..3 factory, 4.. user) and SAVE KIT */
-    uint8_t pick_beat, pick_prog;                    /* the library's BEAT (a kit track) and PROGRESSION (the conductor) */
+    uint8_t pick_beat, pick_prog, pick_tpl;          /* the library's BEAT (a kit track), PROGRESSION (the conductor), TEMPLATE (HOME) */
     uint8_t pick_bt;                                 /* Bluetooth audio's FORGET: the remembered device */
     uint8_t pick_clear, pick_paste;
     int8_t pick_shift, pick_rot;                     /* SHIFT NOTES' semitones (-24..24) and ROTATE's steps (-16 left ..
@@ -275,6 +275,11 @@ static struct {
     uint32_t sig[6];
 } ui;
 
+typedef struct tpl tpl_t;                      /* templates.c (after this file): the HOME list names one */
+static const tpl_t *tpl_get(int i);
+static int tpl_count(void);
+static const char *tpl_name(const tpl_t *t);
+static const char *tpl_genre(const tpl_t *t);
 /* SEL: the screen as a list: the page's knobs, then its actions */
 enum { LK_KNOB, LK_MORE, LK_ACTION, LK_PICK, LK_NOTE, LK_HEAD };   /* LK_NOTE: a line that says what to do; LK_HEAD:
                                                                     * a section's name (neither ever picked) */
@@ -287,7 +292,7 @@ enum { A_CLEAR_NOTES, A_CLEAR_LOCKS, A_CLEAR_BOTH, A_COPY_PAT, A_PASTE_PAT, A_RO
        A_KIT, A_SAVE_KIT, A_MIDI_CC, A_USB_HOST, A_BT_MIDI, A_BT_AUDIO, A_BT_ADEV, A_BT_DEVICE, A_BT_DEV, A_BT_LOOK,
        A_BT_FORGET, A_BT_DISCONNECT, A_CLEAR, A_ROTATE, A_PASTE, A_COPY_EMPTY, A_CLEAR_BAR,
        A_COPY_SOUND, A_PASTE_SOUND, A_COPY_KEY, A_PASTE_KEY, A_COPY_SCENE, A_PASTE_SCENE, A_DUP_SLOT, A_KIT_FILTER,
-       A_SHIFT, A_LARGE_TYPE, A_CC_IN, A_FX_WIDTH, A_BEAT, A_PROG, NACTIONS };
+       A_SHIFT, A_LARGE_TYPE, A_CC_IN, A_FX_WIDTH, A_BEAT, A_PROG, A_TEMPLATE, NACTIONS };
 static const char *const ACTION_NAME[NACTIONS] = {
     "CLEAR NOTES", "CLEAR LOCKS", "CLEAR NOTES AND LOCKS", "COPY PATTERN", "PASTE PATTERN", "ROTATE FORWARD",
     "ROTATE BACK", "DUPLICATE BAR", "ENGINE", "PRESET", "SCRAMBLE", "SAVE AS PRESET", "RESET SOUND", "FOLLOWS CONDUCTOR",
@@ -299,7 +304,7 @@ static const char *const ACTION_NAME[NACTIONS] = {
     "USB PORT", "BT MIDI", "BT AUDIO", "AUDIO DEVICE", "MIDI DEVICE", "DEVICE", "LOOK AGAIN", "FORGET", "DISCONNECT",
     "CLEAR", "ROTATE", "PASTE", "COPY TO EMPTY", "CLEAR BAR", "COPY SOUND", "PASTE SOUND", "COPY DRUM", "PASTE DRUM",
     "COPY SCENE", "PASTE SCENE", "DUPLICATE SLOT", "KIT FILTER", "SHIFT NOTES", "LARGE TYPE", "CC IN", "PING WIDTH",
-    "BEAT", "PROGRESSION"};
+    "BEAT", "PROGRESSION", "TEMPLATE"};
 static const char *const CLEAR_WHAT[3] = {"notes", "locks", "notes and locks"};
 /* a pick ALGORITHM sets at once (a setting: SEL only leaves the list), as against a choice SEL then carries out */
 static int pick_sets(int a)
@@ -2866,6 +2871,13 @@ static void list_home(int keep)
     proj_slot_text(ui.pick_save % NPROJ, save_t);
     list_add(ACTION_NAME[A_SAVE_TO], save_t, LK_PICK, A_SAVE_TO);
     list_add(ACTION_NAME[A_NEW_PROJ], 0, LK_ACTION, A_NEW_PROJ);
+    {   /* a template: a whole project in a style (templates.c) */
+        static char tplname_t[28];
+        const tpl_t *tp = tpl_get(ui.pick_tpl);
+        tplname_t[0] = 0;
+        s_cat(s_cat(s_cat(tplname_t, tpl_genre(tp)), ": "), tpl_name(tp));
+        list_add(ACTION_NAME[A_TEMPLATE], tplname_t, LK_PICK, A_TEMPLATE);
+    }
     list_add(ACTION_NAME[A_RANDOM_SOUNDS], 0, LK_ACTION, A_RANDOM_SOUNDS);
     list_add(ACTION_NAME[A_PANIC], 0, LK_ACTION, A_PANIC);
 }

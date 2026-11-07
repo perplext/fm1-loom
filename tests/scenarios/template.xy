@@ -1,0 +1,47 @@
+# a template (templates.c): HOME > SEL, the TEMPLATE row turned with ALGO, SEL twice (the ask), and the project is
+# a doomgaze set: tempo, kit, three scenes of beats, the progression on the conductor, five sounds, the FX, the song
+wait 200
+master 4096
+tap HOME
+tap SEL
+wait 40
+row TEMPLATE
+wait 40
+shot template_row.png
+tap SEL
+wait 40
+shot template_ask.png
+tap SEL
+wait 100
+shot template_done.png
+expect tempo 160
+expect par9.e3 1
+expect par9.e2 4
+expect par2.0 11
+expect par3.0 0
+expect par4.0 11
+expect par12.0 15
+expect songlen 3
+expect scene 1
+steps 1 1
+steps 1 2
+steps 9 1
+expect note 9 1 1 64
+# it plays: the song from the top, a bar of each
+wav template.wav
+tap PLAY
+bars 4
+wavstop
+tap PLAY
+stats
+# the next template, and back to a plain new project
+tap HOME
+tap SEL
+row TEMPLATE
+spin ALGO 1
+wait 40
+shot template_next.png
+tap SEL
+tap SEL
+wait 100
+expect tempo 190

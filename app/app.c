@@ -11,6 +11,7 @@
 #include "library.c"
 #include "pages.c"
 #include "ui.c"
+#include "templates.c"
 #include "midicc.c"
 #include "samples.c"
 #ifndef PLAT_HOST

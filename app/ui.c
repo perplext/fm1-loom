@@ -2554,6 +2554,7 @@ static void list_change_do(int32_t e)
         case A_SAVE_PRESET: ui.pick_slot = (uint8_t)((ui.pick_slot + d + NUSER_PRESETS) % NUSER_PRESETS); break;
         case A_KIT: ui.pick_kit = (uint8_t)((ui.pick_kit + d + NKITS) % NKITS); break;
         case A_BEAT: ui.pick_beat = (uint8_t)((ui.pick_beat + d + lib_nbeats()) % lib_nbeats()); break;
+        case A_TEMPLATE: ui.pick_tpl = (uint8_t)((ui.pick_tpl + d + tpl_count()) % tpl_count()); break;
         case A_PROG: ui.pick_prog = (uint8_t)((ui.pick_prog + d + lib_nprogs()) % lib_nprogs()); break;
         case A_SAVE_KIT: ui.pick_kslot = (uint8_t)((ui.pick_kslot + d + NUSER_KITS) % NUSER_KITS); break;
         case A_LOAD_PROJ: ui.pick_slot = (uint8_t)((ui.pick_slot + d + NPROJ) % NPROJ); break;
@@ -3383,6 +3384,8 @@ static void do_random_sounds(void)               /* HOME's RANDOMIZE PRESETS: T2
     mark_dirty();
     say("RANDOMIZED", "T2 to T8");
 }
+static void template_apply(int i);              /* templates.c */
+static void do_template(void) { template_apply(ui.pick_tpl); }
 static void do_new_proj(void)
 {
     engine_transport(0);
@@ -3765,6 +3768,7 @@ static void action_run(int a)
         }
         return;
     case A_NEW_PROJ: ask("NEW PROJECT?", do_new_proj); return;
+    case A_TEMPLATE: ask("REPLACE PROJECT?", do_template); return;
     case A_RANDOM_SOUNDS: ask("NEW SOUNDS ON T2 TO T8?", do_random_sounds); return;
     case A_SAVE_TO: act_save_slot(ui.pick_save % NPROJ); break;
     case A_CLEAR_SCENE: act_clear_scene_ask(); return;
