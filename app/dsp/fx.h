@@ -15,7 +15,9 @@ extern const char *const FXT_NAME[NFXT];
  * sets, as in schwung-psxverb): room, studio small / medium / large, hall, half echo, space echo, chaos echo
  * (almost endless), delay (one echo); then lush, Dattorro's plate at 22.05 kHz (saved by number: a new mode at the end) */
 enum { RV_PLATE, RV_ROOM, RV_STUDIO_S, RV_STUDIO_M, RV_STUDIO_L, RV_HALL, RV_HALF_ECHO, RV_SPACE_ECHO,
-       RV_CHAOS_ECHO, RV_ECHO_ONE, RV_LUSH, NRV };
+       RV_CHAOS_ECHO, RV_ECHO_ONE, RV_LUSH, RV_SHIMMER, NRV };
+/* shimmer (appended): lush with an octave-up fed back into its tank (two crossfading grains read at twice the
+ * speed from a short line after the tank); its third knob is the shimmer amount, not the tone */
 #define NSPU RV_ECHO_ONE                           /* the SPU modes: RV_ROOM .. RV_ECHO_ONE */
 extern const char *const RV_NAME[NRV];         /* "plate", "room", "studio S", ... */
 /* a track's TP_ENGINE byte names the effect and, for the reverb, its mode: the "pick", 0..NFXPICK-1:
@@ -45,6 +47,7 @@ const char *fx_knob_name(int pick, int k);     /* the four knobs' names (the pla
 extern const uint8_t FXT_DEFAULT[NFXT][4];      /* the reverb's row: the plate's */
 extern const uint8_t RV_SPU_DEFAULT[4];         /* the SPU modes' */
 extern const uint8_t RV_LUSH_DEFAULT[4];        /* lush's */
+extern const uint8_t RV_SHIMMER_DEFAULT[4];     /* shimmer's */
 
 #define FX_DLY_LEN 11200              /* int16 samples a side, at half rate (22.05 kHz): 0.5 s plus a 128-sample margin
                                        * (the second core's lag, 256 frames at most; the pool's budget) */

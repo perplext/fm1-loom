@@ -50,13 +50,14 @@ static void zero16(int16_t *b, int32_t n);
 
 const char *const FXT_NAME[NFXT] = {"chorus", "delay", "lofi", "phaser", "reverb"};
 const char *const RV_NAME[NRV] = {"plate", "room", "studio S", "studio M", "studio L", "hall", "half echo",
-                                  "space echo", "chaos echo", "one echo", "lush"};
+                                  "space echo", "chaos echo", "one echo", "lush", "shimmer"};
 static const char *const FXT_KNOB[NFXT][4] = {
     {"rate", "depth", "feedback", "width"}, {"time", "fine", "repeats", "tone"},
     {"rate", "bits", "smooth", "width"},    {"freq", "depth", "rate", "feedback"},
     {"size", "motion", "tone", "damp"},
 };
 static const char *const SPU_KNOB[4] = {"size", "decay", "tone", "damp"};
+static const char *const SHM_KNOB[4] = {"size", "decay", "shimmer", "damp"};
 /* the defaults, 0..127 (what each gives: fx_derive's mappings) */
 const uint8_t FXT_DEFAULT[NFXT][4] = {
     {50, 86, 20, 127},                        /* chorus      0.33 Hz, +-5.5 ms, feedback 0.11, fully wide */
@@ -67,6 +68,7 @@ const uint8_t FXT_DEFAULT[NFXT][4] = {
 };
 const uint8_t RV_SPU_DEFAULT[4] = {127, 64, 64, 0};   /* the console's sizes, its decay, flat, its own filter */
 const uint8_t RV_LUSH_DEFAULT[4] = {64, 64, 56, 48};  /* (fx.h) */
+const uint8_t RV_SHIMMER_DEFAULT[4] = {80, 96, 64, 48};
 
 const char *fx_pick_name(int pick)
 {
@@ -77,6 +79,8 @@ const char *fx_knob_name(int pick, int k)
 {
     int t = fx_pick_type(pick);
     k &= 3;
+    if (t == FXT_REVERB && fx_pick_mode(pick) == RV_SHIMMER)
+        return SHM_KNOB[k];
     return t == FXT_REVERB && fx_pick_mode(pick) != RV_PLATE ? SPU_KNOB[k] : FXT_KNOB[t][k];
 }
 
@@ -101,11 +105,18 @@ static const int32_t LU_OFF[NLU + 1] = {0, 1200, 1397, 1555, 2016, 2363, 3149, 8
 static const float LU_LEN[NLU] = {0.0f, 142.0f, 107.0f, 379.0f, 277.0f, 672.0f, 4453.0f, 1800.0f, 3720.0f, 908.0f,
                                   4217.0f, 2656.0f, 3163.0f};   /* Dattorro's, at 29761 Hz */
 _Static_assert(26672 <= FX_RV_LEN, "lush's lines do not fit FX_RV_LEN");
+/* shimmer: the tank's output into a short line after lush's; two grains of SHM_G ticks read it at twice the speed
+ * (an octave up), crossfaded by a half sine, and go back into the tank's input, high-passed so the lows do not pile up */
+#define SHM_OFF 26672
+#define SHM_G 1536
+#define SHM_LINE 2048
+_Static_assert(SHM_OFF + SHM_LINE <= FX_RV_LEN, "shimmer's line does not fit FX_RV_LEN");
 typedef struct {
     int32_t len[NLU];                 /* the lines' lengths at the size now, 22.05 kHz samples */
     uint32_t base;
     int32_t clear, quiet;             /* (as the SPU's) */
     float lp, hold, lfo, dmp[2], fb[2], prev[2], cur[2], tl, th, tr, thr, scale;
+    float shp, shhp;                  /* shimmer: the grains' phase (ticks, 0..SHM_G), the octave-up's high-pass */
     uint8_t phase;
 } lush_t;
 
@@ -116,7 +127,7 @@ struct fxslot {
     uint8_t mode, mode_t;                     /* the reverb's mode: running, and as set */
     uint8_t knob[4];
     float bpm;
-    float pt[6], pc[6];                       /* the effect's numbers: targets, and gliding */
+    float pt[7], pc[7];                       /* the effect's numbers: targets, and gliding */
     float hpc, lpc, hps, lps;                 /* the filter page */
     /* chorus */
     int32_t cw;
@@ -173,9 +184,9 @@ static void fx_states(fxslot_t *f)              /* a fresh effect: its states at
     f->pph = 0.0f; f->pzl = f->pzr = 0.0f; f->pal = f->par_ = 0.0f;
     f->rquiet = FX_RV_LEN; f->rph = f->rhp = 0.0f;
     f->rtl[0] = f->rtl[1] = f->rtr[0] = f->rtr[1] = 0.0f;
-    for (i = 0; i < 6; i++)
+    for (i = 0; i < 7; i++)
         f->pc[i] = f->pt[i];
-    if (f->mode != RV_LUSH) {
+    if (f->mode != RV_LUSH && f->mode != RV_SHIMMER) {
         spu_reset(&f->spu, f->mode);
     } else {
         lush_t *u = &f->lu;
@@ -233,7 +244,13 @@ static void fx_derive(fxslot_t *f)
         f->pt[3] = 0.9f * d;                                          /* feedback */
         break;
     case FXT_REVERB:
-        if (f->mode_t == RV_LUSH) {
+        if (f->mode_t == RV_LUSH || f->mode_t == RV_SHIMMER) {
+            if (f->mode_t == RV_SHIMMER) {                            /* shimmer: the amount on knob 3, the tone flat */
+                f->pt[6] = 0.7f * c;
+                c = 0.5f;
+            } else {
+                f->pt[6] = 0.0f;
+            }
             f->pt[0] = 0.5f + a;                                      /* size: Dattorro's lengths x0.5 .. x1.5 */
             /* decay: the tail's time, the tank's gain from it and the size (a trip round both halves ~0.715 s x size,
              * the gain met twice: 40 log10(g) = -60 trip / T, T 0.4 .. 19 s); the damping takes more, so measured
@@ -773,6 +790,7 @@ static void do_lush(fxslot_t *f, const float *x, float *ol, float *orr, int m, i
     int16_t *w = f->rv;
     const float sc = f->pc[0] * (22050.0f / 29761.0f), dec = f->pc[1], damp = f->pc[3], tlk = f->pc[2], thk = f->pc[5];
     const float lpk = 0.55f, exc = 12.0f * f->pc[0];      /* (lpk: the send's low-pass, ~5.6 kHz before decimation) */
+    const float shm = f->mode == RV_SHIMMER ? f->pc[6] : 0.0f, shhpk = 0.07f;   /* (shhpk: ~250 Hz at 22.05 kHz) */
     float tl = u->tl, th = u->th, tr = u->tr, thr = u->thr;
     int i, l;
     if (u->clear > 0) {                       /* a new mode: the line emptied first, silent meanwhile */
@@ -803,6 +821,18 @@ static void do_lush(fxslot_t *f, const float *x, float *ol, float *orr, int m, i
                 u->lfo -= 1.0f;
             LU_WR(LU_PRE, s);
             s = LU_RD(LU_PRE, u->len[LU_PRE]);
+            if (shm > 0.0f) {                     /* the octave-up of what the tank put out, back into its input */
+                float pa = u->shp, pb = pa + (float)(SHM_G / 2), sh, wa, wb;
+                if (pb >= (float)SHM_G)
+                    pb -= (float)SHM_G;
+                wa = fm_sin_turns(0.5f * (1.0f - pa / (float)SHM_G));         /* a half sine over each grain */
+                wb = fm_sin_turns(0.5f * (1.0f - pb / (float)SHM_G));
+                sh = wa * spu_rd(w, b, SHM_OFF + (SHM_G - (int32_t)pa)) + wb * spu_rd(w, b, SHM_OFF + (SHM_G - (int32_t)pb));
+                u->shhp += shhpk * (sh - u->shhp);
+                sh -= u->shhp;
+                s += shm * sh;
+                u->shp = pa + 1.0f >= (float)SHM_G ? 0.0f : pa + 1.0f;
+            }
             LU_AP(LU_IN1, 0.75f, s);
             LU_AP(LU_IN2, 0.75f, s);
             LU_AP(LU_IN3, 0.625f, s);
@@ -848,6 +878,8 @@ static void do_lush(fxslot_t *f, const float *x, float *ol, float *orr, int m, i
             u->prev[1] = u->cur[1];
             u->cur[0] = l0 * 0.45f;                 /* (0.6 was a little loud beside the dry: Charles) */
             u->cur[1] = r0 * 0.45f;
+            if (shm > 0.0f)
+                wz |= spu_wr(w, b, SHM_OFF, 0.3f * (l0 + r0));   /* the tank's output into the shimmer line */
             u->base = b - 1u;
             u->quiet = (wz == 0 && !any) ? u->quiet + 2 : 0;
         }
@@ -864,6 +896,7 @@ static void do_lush(fxslot_t *f, const float *x, float *ol, float *orr, int m, i
     u->lp = fm_flush(u->lp);
     u->dmp[0] = fm_flush(u->dmp[0]);
     u->dmp[1] = fm_flush(u->dmp[1]);
+    u->shhp = fm_flush(u->shhp);
     u->tl = fm_flush(tl);
     u->th = fm_flush(th);
     u->tr = fm_flush(tr);
@@ -893,7 +926,7 @@ void fx_process_lag(fxslot_t *f, const float *in, float *out_l, float *out_r, ui
         const int hp_on = f->hpv > 0, lp_on = f->lpv < 127;
         float hps = f->hps, lps = f->lps;
         const float hpc = f->hpc, lpc = f->lpc;
-        for (i = 0; i < 6; i++)
+        for (i = 0; i < 7; i++)
             f->pc[i] += (f->pt[i] - f->pc[i]) * GLIDE;
         for (i = 0; i < m; i++) {
             float v = in[o + i];
@@ -918,7 +951,7 @@ void fx_process_lag(fxslot_t *f, const float *in, float *out_l, float *out_r, ui
         case FXT_REVERB:
             if (f->mode == RV_PLATE)
                 do_reverb(f, x, out_l + o, out_r + o, m, any, lag);
-            else if (f->mode == RV_LUSH)
+            else if (f->mode == RV_LUSH || f->mode == RV_SHIMMER)
                 do_lush(f, x, out_l + o, out_r + o, m, any);
             else
                 do_spu(f, x, out_l + o, out_r + o, m, any);
@@ -934,7 +967,7 @@ int fx_awake(const fxslot_t *f)
     case FXT_DELAY: return f->dquiet < 2 * FX_DLY_LEN;
     case FXT_REVERB:
         return f->mode == RV_PLATE ? f->rquiet < FX_RV_LEN
-             : f->mode == RV_LUSH ? f->lu.clear > 0 || f->lu.quiet < FX_RV_LEN * 2
+             : f->mode == RV_LUSH || f->mode == RV_SHIMMER ? f->lu.clear > 0 || f->lu.quiet < FX_RV_LEN * 2
              : f->spu.clear > 0 || f->spu.quiet < FX_RV_LEN * 2;
     case FXT_CHORUS: case FXT_LOFI: case FXT_PHASER: return 1;
     default: return 0;

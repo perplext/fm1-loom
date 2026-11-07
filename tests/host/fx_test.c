@@ -257,9 +257,9 @@ int main(void)
             {"size", "motion", "tone", "damp"}};
         static const char *const picks[NFXPICK] = {"chorus", "delay", "lofi", "phaser", "plate", "room", "studio S",
                                                    "studio M", "studio L", "hall", "half echo", "space echo",
-                                                   "chaos echo", "one echo", "lush"};
+                                                   "chaos echo", "one echo", "lush", "shimmer"};
         int ok = 1, k;
-        check("five send effects (no distortion), the reverb with eleven modes", NFXT == 5 && NRV == 11 && NFXPICK == 15 &&
+        check("five send effects (no distortion), the reverb with twelve modes", NFXT == 5 && NRV == 12 && NFXPICK == 16 &&
                                                                               !strcmp(FXT_NAME[FXT_REVERB], "reverb"));
         for (t = 0; t < NFXT; t++)
             for (k = 0; k < 4; k++)
@@ -269,7 +269,8 @@ int main(void)
         for (t = 0; t < NFXPICK; t++) {
             ok &= !strcmp(fx_pick_name(t), picks[t]);
             for (k = 0; k < 4; k++)
-                ok &= !strcmp(fx_knob_name(t, k), t > FXT_REVERB ? (const char *[]){"size", "decay", "tone", "damp"}[k]
+                ok &= !strcmp(fx_knob_name(t, k), t == FXT_REVERB + RV_SHIMMER ? (const char *[]){"size", "decay", "shimmer", "damp"}[k]
+                                                 : t > FXT_REVERB ? (const char *[]){"size", "decay", "tone", "damp"}[k]
                                                                   : names[fx_pick_type(t)][k]);
         }
         check("picks: chorus .. phaser, plate .. one echo; the SPU modes' knobs size decay tone damp", ok);
