@@ -43,7 +43,8 @@ static const uint8_t E_GLIDE[NENGINE] = {
     0xE, /* jacquard: scan, bend, ripple (not the table) */ 0x0, /* bellows: four switches */
     0xE, /* cane: timbre, color, damp */ 0xE,               /* voile: timbre, color, breath */
     0x0, 0x0, 0x0, 0x0,                                    /* sample, slice (where a note starts), the kit, midi */
-    0x0};                                                  /* acid (bass303_set: its own) */
+    0x0,                                                   /* acid (bass303_set: its own) */
+    0xF};                                                  /* wall: drive, detune, noise, dark */
 static inline float glide_to(float from, float to)
 {
     float d = to - from;
@@ -63,18 +64,20 @@ static inline float glide_to(float from, float to)
 const char *const RL_NAME[NRL] = {"bass", "lead", "pad", "keys", "pluck", "bell", "stab", "strings", "brass", "voice",
                                   "chord", "fx", "drum", "loop"};
 const char *const EG_NAME[NENGINE] = {"knit", "rayon", "jacquard", "bellows", "cane", "voile", "sample", "slice",
-                                      "kit", "midi", "acid"};
+                                      "kit", "midi", "acid", "wall"};
 const char *const EG_KNOB[NENGINE][4] = {
     {"wave", "detune", "voices", "width"}, {"bright", "ratio", "edge", "tine"},     {"table", "scan", "bend", "ripple"},
     {"stops", "pedal", "rotor", "rate"},   {"model", "timbre", "color", "damp"},   {"model", "timbre", "color", "breath"},
     {"sample", "start", "length", "mode"}, {"sample", "slices", "pitch", "gate"},  {"-", "-", "-", "-"},
     {"cc", "cc", "cc", "cc"},                    /* (midi: each knob named by its CC, tp_info_par) */
-    {"wave", "accent", "slide", "tune"}};
+    {"wave", "accent", "slide", "tune"},
+    {"drive", "detune", "noise", "dark"}};        /* wall */
 /* each engine's plain sound (INIT), 0..127; bellows' four are discrete 1..8, knit's voices 1..7, the Braids engines'
  * models a name each (synth.h NCANE ...) */
 static const uint8_t EG_DEF[NENGINE][4] = {{0, 20, 1, 0},  {40, 25, 0, 0}, {0, 40, 0, 0},  {3, 4, 2, 5},
                                            {0, 64, 64, 0}, {2, 0, 64, 0},  {5, 0, 127, SM_ONESHOT}, {SMP_BREAK, 1, 64, 127},
-                                           {0, 0, 0, 0}, {64, 64, 64, 64}, {0, 64, 21, 64}};   /* (acid: X0X's) */
+                                           {0, 0, 0, 0}, {64, 64, 64, 64}, {0, 64, 21, 64},     /* (acid: X0X's) */
+                                           {70, 45, 25, 55}};                                     /* wall */
 static const char *const VMODE_N[3] = {"poly", "mono", "legato"};
 static const char *const FTYPE_N[NFT] = {"lp24", "ladder", "lp12", "hp12", "bp12", "off"};   /* FT_DYNAMIC: no
                                                                           * filter on a synth track; the kit's
@@ -352,6 +355,7 @@ static inline float pf(const synth_t *s, int trk, int p, int dest, float off)
  * eng_run() writes m <= SUB raw samples to xl (and xr when c.stereo); the amplitude of a cycle is
  * about 1; eng_chunk() moves the engine's own slow parts every chunk */
 static void knit_init(voice_t *v);
+static void wall_init(voice_t *v);
 static void cn_init(voice_t *v);
 static void vo_init(voice_t *v);
 static void eng_init(voice_t *v)
@@ -368,6 +372,8 @@ static void eng_init(voice_t *v)
             v->o[i * 2] = 1.0f;                  /* the rotating phasors start at 1 + 0i */
     if (v->engine == EG_KNIT)
         knit_init(v);
+    if (v->engine == EG_WALL)
+        wall_init(v);
     if (v->engine == EG_RAYON)
         v->o[5] = v->o[7] = 1.0f;                /* rayon: its fall and its tine start full */
     if (v->engine == EG_BELLOWS)
@@ -858,6 +864,85 @@ static void knit_init(voice_t *v)                  /* the voices from random pha
     v->kp_n = -1;                                /* (knit_prep's cache: another engine wrote over ex[]) */
 }
 
+/* wall: a guitar wall for blackgaze and doom in one voice, after what two seven-saw knit tracks did at twice the
+ * price. Three saws (the centre, a pair detuned +-DETUNE either side; PolyBLEP), a fizz of noise (white, tilted down a
+ * little), the sum driven (DRIVE: x1 .. x9) into a triangle wavefolder and a cubic soft clip, then a cabinet: two
+ * one-pole low-passes that close with DARK (9 kHz .. 1.2 kHz) and a high-pass at 80 Hz. Stereo: the left leans on
+ * the lower saw, the right on the upper, each side folded on its own, so the wall is wide without a chorus.
+ * o[0..2] the phases, o[3] the noise tilt, o[4..5] cab L (two poles), o[6..7] cab R, o[8..9] hp L R. ex[0..2] the increments, ex[3..5] 1 / them, ex[6] the gain into the folder, ex[7] the cab's k,
+ * ex[8] the noise gain, ex[9] the hp's k, ex[10] the output gain (down as the drive goes up) */
+static void wall_prep(voice_t *v)
+{
+    cfg_t *c = &v->c;
+    float f = fm_minf(c->freq * INV_SR, 0.45f), det = fm_exp2f(c->e[1] * (35.0f / 1200.0f)), g = 1.0f + 8.0f * c->e[0];
+    int k;
+    c->ex[0] = f;
+    c->ex[1] = fm_minf(f * det, 0.45f);
+    c->ex[2] = fm_maxf(f / det, 1e-6f);
+    for (k = 0; k < 3; k++)
+        c->ex[3 + k] = 1.0f / c->ex[k];
+    c->ex[6] = g;
+    c->ex[7] = 1.0f - fm_expf(-FM_TWO_PI * 9000.0f * fm_exp2f(-c->e[3] * 2.9f) * INV_SR);   /* 9 kHz .. 1.2 kHz */
+    c->ex[8] = c->e[2] * 0.6f;
+    c->ex[9] = 1.0f - fm_expf(-FM_TWO_PI * 80.0f * INV_SR);
+    c->ex[10] = fm_minf(2.2f / fm_sqrtf(g), 1.2f);   /* (a folded wall is loud: level it against the drive) */
+    c->stereo = 1;
+
+}
+static inline float wall_fold(float x)             /* a triangle folder with its period 4: 1 at 1, back to 0 at 2, -1 at 3 */
+{
+    float t = (x + 1.0f) * 0.25f;
+    t -= (float)(int)t;                          /* (a truncation, not a floor: cheaper, and the sign below mends it) */
+    if (t < 0.0f)
+        t += 1.0f;
+    t = t - 0.5f;
+    return 1.0f - 4.0f * (t < 0.0f ? -t : t);
+}
+static void wall_run(voice_t *v, float *xl, float *xr, int m)
+{
+    const cfg_t *c = &v->c;
+    const float d0 = c->ex[0], d1 = c->ex[1], d2 = c->ex[2], i0 = c->ex[3], i1 = c->ex[4], i2 = c->ex[5];
+    const float g = c->ex[6], ck = c->ex[7], gn = c->ex[8], hk = c->ex[9], go = c->ex[10];
+    float p0 = v->o[0], p1 = v->o[1], p2 = v->o[2], nz = v->o[3];
+    float l1 = v->o[4], l2 = v->o[5], r1 = v->o[6], r2 = v->o[7], hl = v->o[8], hr = v->o[9];
+    int i;
+    for (i = 0; i < m; i++) {
+        float s0, s1, s2, n, a, b, yl, yr;
+        s0 = 2.0f * p0 - 1.0f - blep(p0, d0, i0);
+        s1 = 2.0f * p1 - 1.0f - blep(p1, d1, i1);
+        s2 = 2.0f * p2 - 1.0f - blep(p2, d2, i2);
+        p0 = step1(p0, d0);
+        p1 = step1(p1, d1);
+        p2 = step1(p2, d2);
+        nz += 0.3f * (frand(&v->rng) - nz);          /* the fizz: white noise tilted down */
+        n = nz * gn;
+        a = (s0 + 0.85f * s2 + 0.45f * s1 + n) * g;  /* the left leans on the lower saw, */
+        b = (s0 + 0.45f * s2 + 0.85f * s1 + n) * g;  /* the right on the upper */
+        a = wall_fold(a);                            /* (the folder is bounded: no clip after it) */
+        b = wall_fold(b);
+        l1 += ck * (a - l1);                         /* the cabinet: two poles a side */
+        l2 += ck * (l1 - l2);
+        r1 += ck * (b - r1);
+        r2 += ck * (r1 - r2);
+        hl += hk * (l2 - hl);                        /* and its high-pass */
+        hr += hk * (r2 - hr);
+        yl = l2 - hl;
+        yr = r2 - hr;
+        xl[i] = yl * go;                             /* (the buffers are the engine's to set) */
+        xr[i] = yr * go;
+    }
+    v->o[0] = p0; v->o[1] = p1; v->o[2] = p2; v->o[3] = nz;
+    v->o[4] = fm_flush(l1); v->o[5] = fm_flush(l2); v->o[6] = fm_flush(r1); v->o[7] = fm_flush(r2);
+    v->o[8] = fm_flush(hl); v->o[9] = fm_flush(hr);
+}
+static void wall_init(voice_t *v)                  /* the saws from random phases */
+{
+    int j;
+    for (j = 0; j < 3; j++)
+        v->o[j] = (float)(xs(&v->rng) >> 8) * (1.0f / 16777216.0f);
+    v->pitch_in = -1.0f;                         /* (another engine's ex[] are not the wall's: a prep before the first sample) */
+}
+
 /* cane, voile and gingham: Braids' models (dsp/braids.h, MIT) */
 #define CN_NONE 0xFFu
 #include "braids.h"
@@ -1312,6 +1397,7 @@ static void eng_prep(voice_t *v, float bpm)
     case EG_CANE: cn_prep(v); break;
     case EG_VOILE: vo_prep(v); break;
     case EG_ACID: v->c.stereo = 0; break;        /* (its own: acid_chunk) */
+    case EG_WALL: wall_prep(v); break;
     default: knit_prep(v); break;
     }
 }
@@ -1326,6 +1412,7 @@ static void eng_run(voice_t *v, float *xl, float *xr, int m)
     case EG_CANE: cn_run(v, xl, xr, m); break;
     case EG_VOILE: vo_run(v, xl, xr, m); break;
     case EG_ACID: acid_run(v, xl, m); break;
+    case EG_WALL: wall_run(v, xl, xr, m); break;
     default: knit_run(v, xl, xr, m); break;
     }
 }
@@ -2967,7 +3054,7 @@ static void voice_samples(synth_t *s, voice_t *v, float *l, float *r, float *s1,
         if (ahead) {                             /* (knit's oscillators made for the whole call already: below) */
             xl = bl + i;
             xr = br + i;
-        } else if (i == 0 && (v->engine == EG_KNIT || v->engine == EG_ACID) && v->steal_phase != 1 && m <= SY_CHUNK) {
+        } else if (i == 0 && (v->engine == EG_KNIT || v->engine == EG_ACID || v->engine == EG_WALL) && v->steal_phase != 1 && m <= SY_CHUNK) {
             /* knit's oscillators depend on the chunk's values alone (its pitch, detune, gains: voice_chunk), and m
              * stays inside a chunk: all of them at once, each oscillator's set-up once instead of a sub-block's
              * worth of times; the filter, the character and the outputs keep their sub-blocks below (a pending

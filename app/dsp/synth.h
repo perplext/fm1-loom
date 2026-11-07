@@ -39,7 +39,7 @@
  * velocity ACID_ACCENT or more is accented; a note that starts while the last one is still held slides to it, and so
  * does a note with a glide (a step's glide trick, the arp's glide) after a short one: on the same pitch, a tie. */
 enum { EG_KNIT, EG_RAYON, EG_JACQUARD, EG_BELLOWS, EG_CANE, EG_VOILE, EG_SAMPLE, EG_SLICE, EG_DRUMLINE, EG_MIDI,
-       EG_ACID, NENGINE };                           /* (saved by number: PROJ_FORMAT 10 renumbered them; a new one
+       EG_ACID, EG_WALL, NENGINE };                  /* (saved by number: PROJ_FORMAT 10 renumbered them; a new one
                                                       * goes last) */
 #define NACID 2
 #define ACID_ACCENT 112
