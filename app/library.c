@@ -7,7 +7,14 @@
  * shape; it goes on the conductor's pattern a bar a beat-step (its scale 4: a step a beat), one chord a bar, so
  * a track that follows the conductor moves with it. Both only load; the player edits them after as any pattern. */
 #include "library.h"
-#include <string.h>
+
+/* (no libc on the device: memset is the compiler's own call, a string compare is ours) */
+int lib_streq(const char *a, const char *b)
+{
+    while (*a && *a == *b)
+        a++, b++;
+    return *a == *b;
+}
 
 /* ---- beats: the sounds in the default kit's order: kick, snare, hat, open, clap, ltom, htom, conga, shaker */
 enum { LB_KICK, LB_SNARE, LB_HAT, LB_OPEN, LB_CLAP, LB_LTOM, LB_HTOM, LB_CONGA, LB_SHAKER, LB_N };

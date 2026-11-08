@@ -115,7 +115,7 @@ static const tpl_t *tpl_get(int i) { return &TEMPLATES[((i % NTEMPLATES) + NTEMP
 static int preset_find(const char *name, int engine)
 {
     for (int k = 0; k < NPRESETS; k++)
-        if (PRESETS[k].par[TP_ENGINE] == engine && !strcmp(PRESETS[k].name, name))
+        if (PRESETS[k].par[TP_ENGINE] == engine && lib_streq(PRESETS[k].name, name))
             return k;
     return -1;
 }
@@ -198,7 +198,7 @@ static void template_apply(int i)
     for (sc = 0; sc < TPL_NSCENE; sc++) {
         tpat_t *pt = &pats.pat[0][sc];
         for (k = 0; k < lib_nbeats() && tp->beat[sc]; k++)
-            if (!strcmp(lib_beat_name(k), tp->beat[sc])) {
+            if (lib_streq(lib_beat_name(k), tp->beat[sc])) {
                 lib_beat_load(pt, k);
                 break;
             }
@@ -209,7 +209,7 @@ static void template_apply(int i)
     /* the progression on the conductor, in the key */
     proj.trk[AUX_BRAIN].par[TP_E2] = (uint8_t)(tp->key % 12);
     for (k = 0; k < lib_nprogs() && tp->prog; k++)
-        if (!strcmp(lib_prog_name(k), tp->prog)) {
+        if (lib_streq(lib_prog_name(k), tp->prog)) {
             scale = lib_prog_load(&pats.pat[AUX_BRAIN][0], k, tp->key % 12);
             break;
         }

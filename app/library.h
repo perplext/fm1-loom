@@ -14,3 +14,4 @@ const char *lib_prog_name(int i);
 const char *lib_prog_genre(int i);
 int lib_prog_scale(int i);                      /* its scale, BS_* */
 int lib_prog_load(tpat_t *tp, int i, int key);  /* the chords onto the conductor's pattern; returns its scale */
+int lib_streq(const char *a, const char *b);    /* a string compare (the device has no libc) */
