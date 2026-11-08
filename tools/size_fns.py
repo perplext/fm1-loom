@@ -52,7 +52,7 @@ COLD = {
     "dsp/synth.c": ["tp_text_i", "tp_text_par", "tp_info_par", "tp_text", "char_picture",
                     "synth_note_off", "synth_duck_trigger", "synth_all_off",
                     "sound_default", "synth_init", "eknob_init", "voice_chunk", "voice_subblock", "synth_prepare",
-                    "wall_prep"],
+                    "wall_prep", "wall_run"],
     "seq/pattern.c": [],
     "seq/seq.c": ["fire_notes", "key_in", "seq_init", "bar_end", "do_start", "emit_drum", "rec_key_off",
                   "rec_key_on", "restart", "track_reset", "seq_rec_pos", "deg_to_note", "seq_cue_pattern",
