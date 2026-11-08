@@ -355,7 +355,6 @@ static inline float pf(const synth_t *s, int trk, int p, int dest, float off)
  * eng_run() writes m <= SUB raw samples to xl (and xr when c.stereo); the amplitude of a cycle is
  * about 1; eng_chunk() moves the engine's own slow parts every chunk */
 static void knit_init(voice_t *v);
-static void wall_init(voice_t *v);
 static void cn_init(voice_t *v);
 static void vo_init(voice_t *v);
 static void eng_init(voice_t *v)
@@ -373,7 +372,8 @@ static void eng_init(voice_t *v)
     if (v->engine == EG_KNIT)
         knit_init(v);
     if (v->engine == EG_WALL)
-        wall_init(v);
+        v->pitch_in = -1.0f;                     /* (another engine's ex[] are not the wall's: a prep before the first sample;
+                                                    wall_prep seeds the phases, out of this RAM code) */
     if (v->engine == EG_RAYON)
         v->o[5] = v->o[7] = 1.0f;                /* rayon: its fall and its tine start full */
     if (v->engine == EG_BELLOWS)
@@ -876,6 +876,9 @@ static void wall_prep(voice_t *v)
     cfg_t *c = &v->c;
     float f = fm_minf(c->freq * INV_SR, 0.45f), det = fm_exp2f(c->e[1] * (35.0f / 1200.0f)), g = 1.0f + 8.0f * c->e[0];
     int k;
+    if (v->o[0] == 0.0f && v->o[1] == 0.0f && v->o[2] == 0.0f)   /* a fresh voice (eng_init zeroed it): the saws from random phases */
+        for (k = 0; k < 3; k++)
+            v->o[k] = (float)(xs(&v->rng) >> 8) * (1.0f / 16777216.0f);
     c->ex[0] = f;
     c->ex[1] = fm_minf(f * det, 0.45f);
     c->ex[2] = fm_maxf(f / det, 1e-6f);
@@ -935,14 +938,6 @@ static void wall_run(voice_t *v, float *xl, float *xr, int m)
     v->o[4] = fm_flush(l1); v->o[5] = fm_flush(l2); v->o[6] = fm_flush(r1); v->o[7] = fm_flush(r2);
     v->o[8] = fm_flush(hl); v->o[9] = fm_flush(hr);
 }
-static __attribute__((noinline)) void wall_init(voice_t *v)   /* the saws from random phases (out of line: synth_note_on is RAM code) */
-{
-    int j;
-    for (j = 0; j < 3; j++)
-        v->o[j] = (float)(xs(&v->rng) >> 8) * (1.0f / 16777216.0f);
-    v->pitch_in = -1.0f;                         /* (another engine's ex[] are not the wall's: a prep before the first sample) */
-}
-
 /* cane, voile and gingham: Braids' models (dsp/braids.h, MIT) */
 #define CN_NONE 0xFFu
 #include "braids.h"

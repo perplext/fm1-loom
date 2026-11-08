@@ -78,7 +78,14 @@ jobs:
           ./build.sh --rfm1 --release "$version"
           cp "app/build/loom-$version.rfm1" build/release-assets/
         else
-          ./build.sh
+          rc=0; ./build.sh || rc=$?
+          # (while the image is being fitted: its sections and largest symbols in the log, pass or fail)
+          if [ -f app/build/loom.elf ]; then
+            echo "::group::size report"
+            python3 tools/size_report.py "$JIELI_TOOLCHAIN/common/bin/objdump" app/build/loom.elf || true
+            echo "::endgroup::"
+          fi
+          [ "$rc" = 0 ] || exit "$rc"
           cp app/build/loom.fwsc build/release-assets/
           cp app/build/loom-res.bin build/release-assets/
           cp app/build/loom.bin build/release-assets/loom-app.bin
