@@ -37,6 +37,7 @@ from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[1]
 SIZE_FILES = ["app/ui.c", "app/pages.c", "app/project.c", "app/lz.c", "app/samples.c", "app/gfx_loom.c", "app/app.c",
+              "app/library.c", "app/templates.c",
               "app/plat_loom.c", "base/device/panel.c", "base/device/main_fm1.c", "base/device/gfx.c",
               "base/device/storage.c", "base/bsp/chip/ota.c", "base/device/announce.c", "base/device/backup.c"]
 COLD = {
@@ -50,11 +51,23 @@ COLD = {
     "dsp/bench.c": [],
     "dsp/synth.c": ["tp_text_i", "tp_text_par", "tp_info_par", "tp_text", "char_picture",
                     "synth_note_off", "synth_duck_trigger", "synth_all_off",
-                    "sound_default", "synth_init", "eknob_init", "voice_chunk", "voice_subblock", "synth_prepare"],
+                    "sound_default", "synth_init", "eknob_init", "voice_chunk", "voice_subblock", "synth_prepare",
+                    "wall_prep", "wall_init"],
     "seq/pattern.c": [],
     "seq/seq.c": ["fire_notes", "key_in", "seq_init", "bar_end", "do_start", "emit_drum", "rec_key_off",
                   "rec_key_on", "restart", "track_reset", "seq_rec_pos", "deg_to_note", "seq_cue_pattern",
-                  "arp_stop", "keys_all_off"],
+                  "arp_stop", "keys_all_off",
+                  # what the panel and the host run (an edit, a transport change, a setting), never a tick
+                  "seq_cue_left", "seq_cue_scene", "seq_set_scene", "seq_start", "seq_start_at", "seq_stop",
+                  "seq_continue", "seq_tempo", "seq_bar_go", "seq_bar_step", "seq_rec", "seq_rec_knob",
+                  "seq_step_add_notes", "seq_step_rec", "seq_maestro_record", "seq_punch_key", "seq_punch_mask",
+                  "strum_learn", "kit_rt_clear", "kit_rec_fresh", "lane_forget",
+                  "lane_masks_make", "lock_put", "rand_begin", "rand_end", "rand_notes", "rand_pool", "rand_track",
+                  "rand_wrap", "rec_count_in", "rec_go", "rec_step1", "do_stop", "scene_read", "jump_set", "resync",
+                  "seq_key_all_off", "seq_midi_notes_off", "phys_set", "tracks_go", "loop_after", "loop_before",
+                  "loop_from", "loop_release", "maestro_play", "seq_key", "seq_key_midi", "brain_key_in",
+                  "brain_set_chord", "brain_set_near", "brain_set_near_notes", "brain_set_root",
+                  "brain_set_root_notes", "chord_word", "seq_brain_key"],
 }
 # the two FX slots' and the master's per-sample code, closed under calls (~18 KB; the 24 KB RAMTEXT region holds
 # .ram_text's ~3 KB and the second core's loop besides)

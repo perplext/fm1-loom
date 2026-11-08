@@ -2806,11 +2806,11 @@ static void list_steps(int trk)
     int to = pat_first_empty(trk), paste = clip_ok && clip_kind != CK_STEP;   /* (a step pastes onto steps held) */
     list_head("pattern");
     if (is_drum(trk)) {                               /* the library's beats, by genre */
-        static char beat_t[28];
+        char beat_t[28];                              /* (the list copies the value) */
         s_cat(s_cat(s_cat(beat_t, lib_beat_genre(ui.pick_beat)), ": "), lib_beat_name(ui.pick_beat));
         list_add(ACTION_NAME[A_BEAT], beat_t, LK_PICK, A_BEAT);
     } else if (trk == AUX_BRAIN) {                    /* and its progressions */
-        static char prog_t[28];
+        char prog_t[28];
         s_cat(s_cat(s_cat(prog_t, lib_prog_genre(ui.pick_prog)), ": "), lib_prog_name(ui.pick_prog));
         list_add(ACTION_NAME[A_PROG], prog_t, LK_PICK, A_PROG);
     }
@@ -2872,9 +2872,8 @@ static void list_home(int keep)
     list_add(ACTION_NAME[A_SAVE_TO], save_t, LK_PICK, A_SAVE_TO);
     list_add(ACTION_NAME[A_NEW_PROJ], 0, LK_ACTION, A_NEW_PROJ);
     {   /* a template: a whole project in a style (templates.c) */
-        static char tplname_t[28];
+        char tplname_t[28];
         const tpl_t *tp = tpl_get(ui.pick_tpl);
-        tplname_t[0] = 0;
         s_cat(s_cat(s_cat(tplname_t, tpl_genre(tp)), ": "), tpl_name(tp));
         list_add(ACTION_NAME[A_TEMPLATE], tplname_t, LK_PICK, A_TEMPLATE);
     }

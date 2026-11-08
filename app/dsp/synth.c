@@ -935,7 +935,7 @@ static void wall_run(voice_t *v, float *xl, float *xr, int m)
     v->o[4] = fm_flush(l1); v->o[5] = fm_flush(l2); v->o[6] = fm_flush(r1); v->o[7] = fm_flush(r2);
     v->o[8] = fm_flush(hl); v->o[9] = fm_flush(hr);
 }
-static void wall_init(voice_t *v)                  /* the saws from random phases */
+static __attribute__((noinline)) void wall_init(voice_t *v)   /* the saws from random phases (out of line: synth_note_on is RAM code) */
 {
     int j;
     for (j = 0; j < 3; j++)

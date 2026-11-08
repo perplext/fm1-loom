@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* LOOM-8's library: ready-made beats for the kit and chord progressions for the conductor, by genre, to turn
  * through and load with one press (the Steps list: BEAT on a kit track, PROGRESSION on the conductor; the host:
- * beat / prog). A beat is a string a sound: '.' nothing, 'x' a hit (100), 'X' hard (127), 'o' softer (80),
- * 'g' a ghost (45), '|' a bar line (ignored); 16, 32 or 64 steps at a sixteenth each, the pattern's length set to
- * fit. A progression is a scale and up to eight bars of chords, each a root (semitones above the key) and a
+ * beat / prog). A beat is 16 or 32 steps at a sixteenth each as bit masks a sound (packed from strings by hand: see
+ * beat_t), the pattern's length set to fit. A progression is a scale and up to eight bars of chords, each a root (semitones above the key) and a
  * shape; it goes on the conductor's pattern a bar a beat-step (its scale 4: a step a beat), one chord a bar, so
  * a track that follows the conductor moves with it. Both only load; the player edits them after as any pattern. */
 #include "library.h"
@@ -18,46 +17,45 @@ int lib_streq(const char *a, const char *b)
 
 /* ---- beats: the sounds in the default kit's order: kick, snare, hat, open, clap, ltom, htom, conga, shaker */
 enum { LB_KICK, LB_SNARE, LB_HAT, LB_OPEN, LB_CLAP, LB_LTOM, LB_HTOM, LB_CONGA, LB_SHAKER, LB_N };
+/* a sound's steps as bit masks (bit k = step k): the hits, and which of them are hard (127), ghosts (45), soft (80);
+ * the rest 100. The source strings (tools/beats.py: '.' 'x' 'X' 'g' 'o') pack to these: a sixteenth a step */
+typedef struct { uint8_t sound; uint32_t hits, loud, ghost, soft; } beat_lane_t;
 typedef struct {
     const char *name, *genre;
-    const char *s[LB_N];            /* a string a sound, 0 none */
+    uint8_t len, n;
+    beat_lane_t l[5];
 } beat_t;
 static const beat_t BEATS[] = {
-    /* dungeon synth: slow, martial, sparse */
-    {"crypt march", "dungeon", {"x.......x.......", "........x.......", 0, 0, 0, "..x...x...x...x.", 0, 0, "x.x.x.x.x.x.x.x."}},
-    {"torchlight", "dungeon", {"x.......", "....x...", 0, 0, 0, "......x.", 0, 0, 0}},
-    {"war drums", "dungeon", {"x..x..x.x..x..x.", "....x.......x...", 0, 0, 0, "x..x..x.x..x..x.", "......x.......x.", 0, 0}},
-    {"procession", "dungeon", {"x...x...x...x...", "........x.......", "..x...x...x...x.", 0, 0, 0, 0, 0, "x.x.x.x.x.x.x.x."}},
-    {"tambour", "dungeon", {"x.x.....x.x.....", "....x.......x...", 0, 0, 0, "x.x.....x.x.....", "....x.......x...", "x...x...x...x...", 0}},
-    /* darkwave / synthwave: machine drums, 80s */
-    {"darkwave", "darkwave", {"x...x...x...x...", "....x.......x...", "x.x.x.x.x.x.x.x.", "..............x.", 0, 0, 0, 0, 0}},
-    {"coldwave", "darkwave", {"x.......x..x....", "....X.......X...", "xxxxxxxxxxxxxxxx", 0, "....x.......x...", 0, 0, 0, 0}},
-    {"gated snare", "darkwave", {"x.....x.x.......", "....X.......X...", "x.x.x.x.x.x.x.x.", 0, 0, "..............xx", "............xx..", 0, 0}},
-    {"minimal wave", "darkwave", {"x...x...x...x...", "....x.......x...", "..x...x...x...x.", 0, "....x.......x...", 0, 0, 0, 0}},
-    /* blackgaze / doom / metal */
-    {"blast", "blackgaze", {"x.x.x.x.x.x.x.x.", ".x.x.x.x.x.x.x.x", "xxxxxxxxxxxxxxxx", 0, 0, 0, 0, 0, 0}},
-    {"hyperblast", "blackgaze", {"xxxxxxxxxxxxxxxx", "xxxxxxxxxxxxxxxx", "x.x.x.x.x.x.x.x.", 0, 0, 0, 0, 0, 0}},
-    {"d-beat", "blackgaze", {"x.x.x.x.x.x.x.x.", "..x...x...x...x.", "x.x.x.x.x.x.x.x.", 0, 0, 0, 0, 0, 0}},
-    {"doom", "blackgaze", {"x.....x.x.......", "........X.......", "x.x.x.x.x.x.x.x.", "..............x.", 0, 0, 0, 0, 0}},
-    {"doom slow", "blackgaze", {"x...............x.......x.......", "................X...............", "x...x...x...x...x...x...x...x...", "............................x...", 0, "..............x.", 0, 0, 0}},
-    {"skank", "blackgaze", {"x...x...x...x...", "..x...x...x...x.", "x.x.x.x.x.x.x.x.", 0, 0, 0, 0, 0, 0}},
-    {"tremolo roll", "blackgaze", {"x.......x.......", "....x.......x...", "x.x.x.x.x.x.x.x.", 0, 0, "..xx..xx..xx..xx", 0, 0, 0}},
-    /* dubstep / drumstep / halftime bass music (140 / 170 halftime) */
-    {"dubstep", "dubstep", {"x.........x.....", "........X.......", "x.x.x.x.x.x.x.x.", "......x.........", 0, 0, 0, 0, 0}},
-    {"dubstep 2", "dubstep", {"x.......x.x.....", "........X.....g.", "x.xxx.x.x.xxx.x.", 0, "........x.......", 0, 0, 0, 0}},
-    {"halftime", "dubstep", {"x......x..x.....", "........X.......", "..x...x...x...x.", 0, 0, 0, 0, 0, "x.x.x.x.x.x.x.x."}},
-    {"drumstep", "drumstep", {"x.........x.....", "........X......g", "x.x.x.x.x.x.x.x.", 0, 0, 0, 0, 0, 0}},
-    {"drumstep 2", "drumstep", {"x..x......x..x..", "........X.......", "xxxxxxxxxxxxxxxx", "..............x.", 0, 0, 0, 0, 0}},
-    {"trap", "trap", {"x.....x...x.....", "........X.......", "x.x.x.xxx.x.x.xx", 0, "........x.......", 0, 0, 0, 0}},
-    {"two step", "dnb", {"x.........x.....", "....X.......X...", "x.x.x.x.x.x.x.x.", 0, 0, 0, 0, 0, 0}},
-    {"amen", "dnb", {"x.x.......xx....", "....X..g.g..X...", "x.x.x.x.x.x.x.x.", 0, 0, 0, 0, 0, 0}},
-    {"jungle", "dnb", {"x.........x.x...", "....X..g..g.X...", "xxxxxxxxxxxxxxxx", 0, 0, 0, 0, 0, 0}},
-    /* house / techno / hip hop, for the rest */
-    {"four floor", "house", {"x...x...x...x...", "....x.......x...", "..x...x...x...x.", 0, 0, 0, 0, 0, 0}},
-    {"techno", "techno", {"x...x...x...x...", 0, "x.x.x.x.x.x.x.x.", "..x...x...x...x.", "....x.......x...", 0, 0, 0, 0}},
-    {"dub techno", "techno", {"x...x...x...x...", 0, "..x...x...x...x.", 0, "....x.......x...", 0, 0, "x...x...x...x...", 0}},
-    {"boom bap", "hiphop", {"x.....x.x.......", "....X.......X...", "x.x.x.x.x.x.x.x.", 0, 0, 0, 0, 0, 0}},
-    {"breakbeat", "breaks", {"x.........x.x...", "....X.g.....X...", "x.x.x.x.x.x.x.x.", "..............x.", 0, 0, 0, 0, 0}},
+    {"crypt march", "dungeon", 16, 4, {{0, 0x00000101, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00000100, 0x00000000, 0x00000000, 0x00000000}, {5, 0x00004444, 0x00000000, 0x00000000, 0x00000000}, {8, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"torchlight", "dungeon", 16, 3, {{0, 0x00000001, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00000010, 0x00000000, 0x00000000, 0x00000000}, {5, 0x00000040, 0x00000000, 0x00000000, 0x00000000}}},
+    {"war drums", "dungeon", 16, 4, {{0, 0x00004949, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00000000, 0x00000000, 0x00000000}, {5, 0x00004949, 0x00000000, 0x00000000, 0x00000000}, {6, 0x00004040, 0x00000000, 0x00000000, 0x00000000}}},
+    {"procession", "dungeon", 16, 4, {{0, 0x00001111, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00000100, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00004444, 0x00000000, 0x00000000, 0x00000000}, {8, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"tambour", "dungeon", 16, 5, {{0, 0x00000505, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00000000, 0x00000000, 0x00000000}, {5, 0x00000505, 0x00000000, 0x00000000, 0x00000000}, {6, 0x00001010, 0x00000000, 0x00000000, 0x00000000}, {7, 0x00001111, 0x00000000, 0x00000000, 0x00000000}}},
+    {"darkwave", "darkwave", 16, 4, {{0, 0x00001111, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}, {3, 0x00004000, 0x00000000, 0x00000000, 0x00000000}}},
+    {"coldwave", "darkwave", 16, 4, {{0, 0x00000901, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00001010, 0x00000000, 0x00000000}, {2, 0x0000ffff, 0x00000000, 0x00000000, 0x00000000}, {4, 0x00001010, 0x00000000, 0x00000000, 0x00000000}}},
+    {"gated snare", "darkwave", 16, 5, {{0, 0x00000141, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00001010, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}, {5, 0x0000c000, 0x00000000, 0x00000000, 0x00000000}, {6, 0x00003000, 0x00000000, 0x00000000, 0x00000000}}},
+    {"minimal wave", "darkwave", 16, 4, {{0, 0x00001111, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00004444, 0x00000000, 0x00000000, 0x00000000}, {4, 0x00001010, 0x00000000, 0x00000000, 0x00000000}}},
+    {"blast", "blackgaze", 16, 3, {{0, 0x00005555, 0x00000000, 0x00000000, 0x00000000}, {1, 0x0000aaaa, 0x00000000, 0x00000000, 0x00000000}, {2, 0x0000ffff, 0x00000000, 0x00000000, 0x00000000}}},
+    {"hyperblast", "blackgaze", 16, 3, {{0, 0x0000ffff, 0x00000000, 0x00000000, 0x00000000}, {1, 0x0000ffff, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"d-beat", "blackgaze", 16, 3, {{0, 0x00005555, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00004444, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"doom", "blackgaze", 16, 4, {{0, 0x00000141, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00000100, 0x00000100, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}, {3, 0x00004000, 0x00000000, 0x00000000, 0x00000000}}},
+    {"doom slow", "blackgaze", 32, 5, {{0, 0x01010001, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00010000, 0x00010000, 0x00000000, 0x00000000}, {2, 0x11111111, 0x00000000, 0x00000000, 0x00000000}, {3, 0x10000000, 0x00000000, 0x00000000, 0x00000000}, {5, 0x00004000, 0x00000000, 0x00000000, 0x00000000}}},
+    {"skank", "blackgaze", 16, 3, {{0, 0x00001111, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00004444, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"tremolo roll", "blackgaze", 16, 4, {{0, 0x00000101, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}, {5, 0x0000cccc, 0x00000000, 0x00000000, 0x00000000}}},
+    {"dubstep", "dubstep", 16, 4, {{0, 0x00000401, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00000100, 0x00000100, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}, {3, 0x00000040, 0x00000000, 0x00000000, 0x00000000}}},
+    {"dubstep 2", "dubstep", 16, 4, {{0, 0x00000501, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00004100, 0x00000100, 0x00004000, 0x00000000}, {2, 0x00005d5d, 0x00000000, 0x00000000, 0x00000000}, {4, 0x00000100, 0x00000000, 0x00000000, 0x00000000}}},
+    {"halftime", "dubstep", 16, 4, {{0, 0x00000481, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00000100, 0x00000100, 0x00000000, 0x00000000}, {2, 0x00004444, 0x00000000, 0x00000000, 0x00000000}, {8, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"drumstep", "drumstep", 16, 3, {{0, 0x00000401, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00008100, 0x00000100, 0x00008000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"drumstep 2", "drumstep", 16, 4, {{0, 0x00002409, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00000100, 0x00000100, 0x00000000, 0x00000000}, {2, 0x0000ffff, 0x00000000, 0x00000000, 0x00000000}, {3, 0x00004000, 0x00000000, 0x00000000, 0x00000000}}},
+    {"trap", "trap", 16, 4, {{0, 0x00000441, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00000100, 0x00000100, 0x00000000, 0x00000000}, {2, 0x0000d5d5, 0x00000000, 0x00000000, 0x00000000}, {4, 0x00000100, 0x00000000, 0x00000000, 0x00000000}}},
+    {"two step", "dnb", 16, 3, {{0, 0x00000401, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00001010, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"amen", "dnb", 16, 3, {{0, 0x00000c05, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001290, 0x00001010, 0x00000280, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"jungle", "dnb", 16, 3, {{0, 0x00001401, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001490, 0x00001010, 0x00000480, 0x00000000}, {2, 0x0000ffff, 0x00000000, 0x00000000, 0x00000000}}},
+    {"four floor", "house", 16, 3, {{0, 0x00001111, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00004444, 0x00000000, 0x00000000, 0x00000000}}},
+    {"techno", "techno", 16, 4, {{0, 0x00001111, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}, {3, 0x00004444, 0x00000000, 0x00000000, 0x00000000}, {4, 0x00001010, 0x00000000, 0x00000000, 0x00000000}}},
+    {"dub techno", "techno", 16, 4, {{0, 0x00001111, 0x00000000, 0x00000000, 0x00000000}, {2, 0x00004444, 0x00000000, 0x00000000, 0x00000000}, {4, 0x00001010, 0x00000000, 0x00000000, 0x00000000}, {7, 0x00001111, 0x00000000, 0x00000000, 0x00000000}}},
+    {"boom bap", "hiphop", 16, 3, {{0, 0x00000141, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001010, 0x00001010, 0x00000000, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}}},
+    {"breakbeat", "breaks", 16, 4, {{0, 0x00001401, 0x00000000, 0x00000000, 0x00000000}, {1, 0x00001050, 0x00001010, 0x00000040, 0x00000000}, {2, 0x00005555, 0x00000000, 0x00000000, 0x00000000}, {3, 0x00004000, 0x00000000, 0x00000000, 0x00000000}}},
 };
 #define NBEATS ((int)(sizeof BEATS / sizeof BEATS[0]))
 
@@ -65,42 +63,30 @@ int lib_nbeats(void) { return NBEATS; }
 const char *lib_beat_name(int i) { return BEATS[((i % NBEATS) + NBEATS) % NBEATS].name; }
 const char *lib_beat_genre(int i) { return BEATS[((i % NBEATS) + NBEATS) % NBEATS].genre; }
 
-static int beat_vel(char c)
-{
-    return c == 'x' ? 100 : c == 'X' ? 127 : c == 'o' ? 80 : c == 'g' ? 45 : (c >= '1' && c <= '9') ? (c - '0') * 14 : 0;
-}
 /* the beat into a kit track's pattern: its steps replaced, its length set, a sixteenth a step. Returns the length */
 int lib_beat_load(tpat_t *tp, int i)
 {
     const beat_t *b = &BEATS[((i % NBEATS) + NBEATS) % NBEATS];
-    int k, len = 0;
+    int k, s;
     for (k = 0; k < NSTEP; k++) {
         memset(&tp->st[k], 0, sizeof tp->st[k]);
         tp->st[k].vel = 100;
     }
-    for (k = 0; k < LB_N; k++) {
-        const char *q = b->s[k];
-        int s = 0;
-        if (!q)
-            continue;
-        for (; *q; q++) {
-            int vel = beat_vel(*q);
-            if (*q == '|')
+    for (k = 0; k < b->n; k++) {
+        const beat_lane_t *l = &b->l[k];
+        for (s = 0; s < b->len && s < 32; s++) {
+            uint32_t bit = 1u << s;
+            step_t *st = &tp->st[s];
+            int vel;
+            if (!(l->hits & bit))
                 continue;
-            if (s >= NSTEP)
-                break;
-            if (vel) {
-                step_t *st = &tp->st[s];
-                kit_add(st, k + 1);
-                if (vel > st->vel || kit_mask(st) == 1u << k)   /* the loudest sound sets the step's velocity */
-                    st->vel = (uint8_t)vel;
-            }
-            s++;
+            vel = l->loud & bit ? 127 : l->ghost & bit ? 45 : l->soft & bit ? 80 : 100;
+            kit_add(st, l->sound + 1);
+            if (vel > st->vel || kit_mask(st) == 1u << l->sound)   /* the loudest sound sets the step's velocity */
+                st->vel = (uint8_t)vel;
         }
-        if (s > len)
-            len = s;
     }
-    tp->len = (uint8_t)(len < 1 ? 16 : len);
+    tp->len = b->len;
     tp->scale = TS_1;
     tp->lstart = tp->lend = 0;
     return tp->len;
