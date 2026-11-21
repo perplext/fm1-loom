@@ -39,6 +39,7 @@ volatile uint8_t eng_drum_hit[NDRUM];
 volatile uint8_t eng_midi_hit[NTRK];
 volatile uint8_t eng_voices, eng_voices_max = NVOICE;
 volatile uint32_t eng_guard_count;
+volatile uint8_t eng_usb_stereo;
 volatile uint32_t eng_acid_lite_count;
 volatile uint32_t eng_punch_drum, eng_punch_mel;
 volatile float eng_pump_db;
@@ -101,7 +102,8 @@ static uint8_t fx_type[2];                        /* each slot's effect, as set 
 static uint32_t metro_left;                       /* the metronome's click: samples left, phase, rate */
 static float metro_ph, metro_inc;
 static int16_t bend_c[NTRK];                      /* the bend component's cents, per track */
-/* MIDI for the main loop (midicc.c): every CC, Program Change and the master channel's note-ons, raw USB-MIDI
+/* MIDI for the main loop (midicc.c): every CC, Program Change and the master channel's note-ons, and every track's
+ * notes for the track on the screen (midicc.c key_midi), raw USB-MIDI
  * packets; the interrupt writes, the main loop reads (engine_cc_take); full, the newest is dropped. 64 is about
  * 17 ms of a busy controller's CCs between two UI frames (longer during a flash write) */
 #define CCQ 64u
@@ -182,7 +184,7 @@ void engine_load(uint32_t pct)
 {
     uint32_t frames = guard_frames;
     guard_frames = 0;
-    /* (the note-start check, synth.c load_over: the last block's load without its look-ahead run, which was the
+    /* (the note-start check, synth.c find_voice: the last block's load without its look-ahead run, which was the
      * next block's sequencing: else a block before a section change, carrying it, has the chord's notes steal) */
     synth_load_hint(SY, pct > la_pct ? pct - la_pct : 0u);
     if (pct > ACID_LITE_ON) {
@@ -941,8 +943,12 @@ static void midi_in(uint32_t pkt)
         if (ch == CH_MASTER) {                      /* the master's channel: notes pick scenes (midicc.c) */
             if (ty == 0x90)
                 ccq_put(pkt);
-        } else if (t >= 0)                          /* played and recorded, not sent back out (seq_key_midi) */
+        } else if (t >= 0) {                        /* played and recorded, not sent back out (seq_key_midi) */
             seq_key_midi(&seq, t, d1, ty == 0x90, d2);
+            if (t == eng_midi_trk)                  /* the track on the screen: the main loop's key too (midicc.c key_midi:
+                                                     * step record, chord mode, the notes a step writes) */
+                ccq_put(pkt);
+        }
     } else if (ty == 0xB0 || ty == 0xC0) {          /* CCs and Program Change: the main loop's (midicc.c) */
         ccq_put(pkt);
     } else if (ty == 0xE0) {                        /* pitch bend: +-2 semitones onto the track's bend */
@@ -1567,7 +1573,8 @@ void engine_render(int32_t *out_lr, uint32_t n, uint32_t gain_q12)
     int p;
     static uint8_t was_playing;
 #if TRK_TAP
-    tap_k = vol * 16384.0f;                               /* (the master: 1.0 is 1 << 22 at the codec, 16384 in 16 bits) */
+    tap_k = eng_usb_stereo ? 0.0f : vol * 16384.0f;     /* (the master: 1.0 is 1 << 22 at the codec, 16384 in 16 bits;
+                                                          * stereo: no taps, channels 3..10 silent) */
 #endif
     PROF_T(pa);
     if (seq.playing && !was_playing)                     /* the transport started: the shared LFO from its start */

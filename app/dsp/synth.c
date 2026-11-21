@@ -91,7 +91,8 @@ static const char *const LDEST_N[NLD] = {"synth", "envelope", "filter", "voice",
 static const char *const DUCK_N[11] = {"track 1", "track 2", "track 3", "track 4", "track 5", "track 6", "track 7",
                                        "track 8", "conductor", "throws", "metro"};
 static const char *const PLAYER_N[NPL] = {"off", "arp", "strum", "hold", "rand"};
-static const char *const ARPSPD_N[9] = {"1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T", "1/64"};
+static const char *const ARPSPD_N[NARPSPD] = {"1/4", "1/8D", "1/4T", "1/8", "1/16D", "1/8T", "1/16", "1/16T", "1/32", "1/32T",
+                                               "1/64"};
 static const char *const ARPPAT_N[6] = {"up", "down", "bounce", "bounce+", "played", "random"};
 static const char *const ARPLEN_N[3] = {"short", "medium", "long"};
 static const char *const ARPSTY_N[6] = {"off", "pedal", "thirds", "double", "skip", "swap"};
@@ -448,6 +449,20 @@ static void wt_run(voice_t *v, float *xl, float *xr, int m)
     v->o[1] = mp;
 }
 
+_Static_assert(WT_FRAMES == WT_NFRAME, "synth.h's WT_FRAMES");
+float wt_value(int t, float scan, float ph)
+{
+    float pos = fm_clampf(scan, 0.0f, 1.0f) * (float)(WT_NFRAME - 1), fr = fm_minf(fm_floorf(pos), (float)(WT_NFRAME - 2));
+    const int8_t *ta = WT[t < 0 ? 0 : t >= WT_NTABLE ? WT_NTABLE - 1 : t][(int)fr], *tb = ta + WT_N;
+    float s = (ph - fm_floorf(ph)) * (float)WT_N, fa, a, b;
+    int k = (int)s;
+    fa = s - (float)k;
+    k &= WT_N - 1;
+    a = (float)ta[k] + ((float)ta[(k + 1) & (WT_N - 1)] - (float)ta[k]) * fa;
+    b = (float)tb[k] + ((float)tb[(k + 1) & (WT_N - 1)] - (float)tb[k]) * fa;
+    return (a + (b - a) * (pos - fr)) * (1.0f / 128.0f);
+}
+
 /* rayon (was orbit): two-operator FM, the DX's way, for e-pianos, bells, mallets and basses. bright = the index (velocity
  * sets how much of it a note gets: 0.4 .. 1 of it); ratio from a detuned 1:1 (0..50: slow beating) to the modulator's
  * ratios (51..100: RAYON_RATIO, the bells' inharmonic ones among them); edge = the modulator's feedback (sine toward
@@ -481,6 +496,19 @@ static void rayon_prep(voice_t *v)
     c->ex[4] = c->ex[5] < 0.45f ? c->e[3] * 0.5f * vs : 0.0f;
     c->stereo = 0;
 }
+/* rayon's sine, sin(2 pi ph) for any phase: folded to a quarter turn, then a degree-7 polynomial in turns (max error
+ * 7.4e-7, -123 dB; fitted on [-1/4, 1/4]). About half the multiplies of fastmath's fm_sin_turns (2 pi, then degree 13),
+ * which rayon calls two or three times a sample */
+static inline float sin_q7(float ph)
+{
+    float x = ph - fm_floorf(ph + 0.5f), x2;
+    if (x > 0.25f)
+        x = 0.5f - x;
+    else if (x < -0.25f)
+        x = -0.5f - x;
+    x2 = x * x;
+    return x * (((-7.099341583e+01f * x2 + 8.134076691e+01f) * x2 - 4.133714294e+01f) * x2 + 6.283164024e+00f);
+}
 static void rayon_run(voice_t *v, float *xl, float *xr, int m)
 {
     const cfg_t *c = &v->c;
@@ -492,15 +520,15 @@ static void rayon_run(voice_t *v, float *xl, float *xr, int m)
         float mo;
         mp = step1(mp, dm);
         cp = step1(cp, dc);
-        mo = fm_sin_turns(mp + fbv * fb);
+        mo = sin_q7(mp + fbv * fb);
         fbv = mo;
-        xl[i] = fm_sin_turns(cp + mo * idx);
+        xl[i] = sin_q7(cp + mo * idx);
     }
     if (tl > 1e-4f) {                            /* the tine, added */
         float tp = v->o[6], dt = c->ex[5];
         for (i = 0; i < m; i++) {
             tp = step1(tp, dt);
-            xl[i] += fm_sin_turns(tp) * tl;
+            xl[i] += sin_q7(tp) * tl;
         }
         v->o[6] = tp;
     }
@@ -812,11 +840,13 @@ SY_INLINE void knit_loop(voice_t *v, float *xl, float *xr, int m, const int ster
     const float *co = KNIT_COEF[n / 2], mix = c->ex[3], pw = c->ex[4], g = c->ex[12], dr = c->ex[22];
     float d[KNIT_MAX + 1], gg[2 * KNIT_MAX + 2];
     int i, k;
-    for (k = 0; k < n; k++) {                    /* the voices: the centre, then the pairs (upper right, lower left) */
+    for (k = 0; k < n; k++) {                    /* the voices: the centre, then the pairs (upper right, lower left); an
+                                                  * even count's last voice has no lower one: the centre is its partner,
+                                                  * on the left (fm1-loom#15: it leaned right) */
         d[k] = fm_clampf((c->ex[0] + co[k] * c->ex[1]) * dr, 1e-6f, 0.45f);
         gg[2 * k] = gg[2 * k + 1] = g;
-        if (k && stereo) {
-            const float *pn = &c->ex[3 + 2 * ((k + 1) >> 1)];
+        if ((k || !(n & 1)) && stereo) {
+            const float *pn = &c->ex[3 + 2 * (k ? (k + 1) >> 1 : n >> 1)];
             gg[2 * k] = g * pn[~k & 1];
             gg[2 * k + 1] = g * pn[k & 1];
         }
@@ -1676,25 +1706,16 @@ static void acid_reserve(synth_t *s, int vi, int trk)   /* the slot for an acid 
 
 /* the load check at a note's start (the FM-1's: there each track knows its voices' measured time): a free voice
  * adds the track's cost to this block's predicted load, scaled by LOAD_SHARE (the two cores share the voices); one
- * that would take it past LOAD_ADMIT % takes a sounding voice instead, as a full pool does. The overload guard
- * (engine.c) only sees a block once it has overrun: a chord change's new voices could. */
-#define LOAD_ADMIT 92.0f
+ * that would take it past LOAD_ADMIT % takes the quietest release tail instead (find_voice). The overload guard
+ * (engine.c) only sees a block once it has overrun: a chord change's new voices could. 80, not 92: the block a chord
+ * lands in also carries its sequencing and note starts (~10 %), and the FM-1 drops out a little under 100 % (pop's
+ * chord change on the FM-1, 2026-11-14: 92 -> 103 % and 2-3 dropouts, 85 -> 97 % and 2, 80 -> 94 % and none) */
+#define LOAD_ADMIT 80.0f
 #define LOAD_SHARE 0.6f
 void synth_load_hint(synth_t *s, uint32_t pct) { s->load_pred = (float)pct; }
 static float load_add(const synth_t *s, int trk)
 {
     return s->t[trk].cost_m * (100.0f / 544.0f) * LOAD_SHARE;   /* (ticks a frame; 544 a frame's budget) */
-}
-static int load_over(const synth_t *s, int trk)
-{
-    int i;
-    float add = load_add(s, trk);
-    if (add <= 0.0f || s->load_pred <= 0.0f || s->load_pred + add <= LOAD_ADMIT)
-        return 0;
-    for (i = 0; i < s->max_voices; i++)          /* (a sounding voice to take: else the free one after all) */
-        if (v_sounding(&s->v[i]) && s->v[i].steal_phase == 0)
-            return 1;
-    return 0;
 }
 
 /* a voice for a new note: a free one (inside the load check); else the track's oldest if it holds NVOICE_TRK
@@ -1702,8 +1723,8 @@ static int load_over(const synth_t *s, int trk)
  * first keep to their own caps (knit_find, cn_find). */
 static int find_voice(synth_t *s, int trk)
 {
-    int i, best = -1, over;
-    float quiet = 1e9f;
+    int i, best = -1, over, free = -1;
+    float quiet = 1e9f, add;
     uint32_t oldest = 0xFFFFFFFFu;
     if (P(s, trk, TP_ENGINE) == EG_KNIT && (best = knit_find(s, trk)) >= 0)
         return best;
@@ -1720,22 +1741,26 @@ static int find_voice(synth_t *s, int trk)
         if (best >= 0)
             return best;
     }
-    over = load_over(s, trk);
-    if (over)
-        synth_load_steals++;
-    else
-        for (i = 0; i < s->max_voices; i++)
-            if (!v_sounding(&s->v[i])) {
-                s->load_pred += load_add(s, trk);
-                return i;
-            }
-    for (i = 0; i < s->max_voices; i++)
-        if (s->v[i].amp.stage == ENV_RELEASE && s->v[i].steal_phase == 0 && s->v[i].amp.level < quiet) {
+    for (i = 0; i < s->max_voices; i++)          /* (one pass: the first free voice, the quietest tail) */
+        if (!v_sounding(&s->v[i])) {
+            if (free < 0)
+                free = i;
+        } else if (s->v[i].amp.stage == ENV_RELEASE && s->v[i].steal_phase == 0 && s->v[i].amp.level < quiet) {
             quiet = s->v[i].amp.level;
             best = i;
         }
-    if (best >= 0)
+    /* a free voice, unless the load check says over and a release tail can make room (a held note is never cut for
+     * the load); else the quietest tail, as a full pool does */
+    add = load_add(s, trk);
+    over = free >= 0 && best >= 0 && add > 0.0f && s->load_pred > 0.0f && s->load_pred + add > LOAD_ADMIT;
+    if (free >= 0 && !over) {
+        s->load_pred += add;
+        return free;
+    }
+    if (best >= 0) {
+        synth_load_steals += (uint32_t)over;
         return best;
+    }
     for (i = 0; i < s->max_voices; i++)
         if (s->v[i].steal_phase == 0 && s->v[i].age < oldest) {
             oldest = s->v[i].age;
@@ -3330,7 +3355,7 @@ static const tp_info_t FIXED[NTP_SOUND + 13] = {
     {"-", 0, 0, 0, PK_NUM, 0}, {"-", 0, 0, 0, PK_NUM, 0}, {"-", 0, 0, 0, PK_NUM, 0}, {"-", 0, 0, 0, PK_NUM, 0},
     {"octave", 0, 4, 2, PK_NAMES, OCT_N},                /* TP_OCT */
     /* TP_PLAYER .. TP_CHAN */
-    {"player", 0, NPL - 1, PL_OFF, PK_NAMES, PLAYER_N}, {"speed", 0, 8, 4, PK_NAMES, ARPSPD_N},
+    {"player", 0, NPL - 1, PL_OFF, PK_NAMES, PLAYER_N}, {"speed", 0, NARPSPD - 1, ARP_1_16, PK_NAMES, ARPSPD_N},
     {"pattern", 0, 5, 0, PK_NAMES, ARPPAT_N},           {"range", 1, 4, 1, PK_NUM, 0},
     {"hold", 0, 1, 0, PK_SWITCH, 0},                    {"length", 0, 2, 1, PK_NAMES, ARPLEN_N},
     {"style", 0, 5, 0, PK_NAMES, ARPSTY_N},             {"glide", 0, 2, 0, PK_NAMES, ARPGLD_N},

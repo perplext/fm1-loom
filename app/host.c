@@ -449,6 +449,10 @@ int app_expect(const char *what, int *got)
         *got = theme_ix();
     else if (!strcmp(what, "listopen"))             /* a SEL list up */
         *got = lst.open;
+    else if (!strcmp(what, "slot_reads"))           /* project_exists's reads of the flash so far */
+        *got = (int)slot_reads;
+    else if (!strncmp(what, "pad", 3) && what[3] >= '1' && what[3] <= '9')   /* padK: kit pad K's flash as drawn, 0..16 */
+        *got = (int)pad_a((atoi(what + 3) - 1) % NDRUM);
     else if (!strncmp(what, "kvel", 4)) {          /* kvelT.PAT.S.K: kit sound K's own velocity on that step (0 none) */
         int t, pt, st, k;
         if (sscanf(what + 4, "%d.%d.%d.%d", &t, &pt, &st, &k) != 4)
@@ -626,6 +630,26 @@ static int expect_more(const char *what, const char *a, const char *b, const cha
             host_fails++;
         } else
             printf("  ok note %s %s %s == %d\n", t, pt, st, got);
+    } else if (!strcmp(what, "noteat") || !strcmp(what, "stepvel")) {   /* expect noteat T PAT S I VALUE: the step's
+                                                     * I-th note (1-4); expect stepvel T PAT S VALUE: its velocity */
+        char t[16], pt[16], st[16], i[16], v[16];
+        tpat_t *tp;
+        int s, k, got, at = !strcmp(what, "noteat");
+        if (sscanf(plat_host_line, at ? "%*s %*s %15s %15s %15s %15s %15s" : "%*s %*s %15s %15s %15s %15s",
+                   t, pt, st, at ? i : v, v) != 4 + at) {
+            printf(at ? "FAIL expect noteat: T PAT S I VALUE\n" : "FAIL expect stepvel: T PAT S VALUE\n");
+            host_fails++;
+            return 1;
+        }
+        tp = pat_of(atoi(t), atoi(pt));
+        s = atoi(st) - 1;
+        k = at ? atoi(i) - 1 : 0;
+        got = !tp || s < 0 || s >= NSTEP || k < 0 || k >= SN ? -1 : at ? tp->st[s].note[k] : tp->st[s].vel;
+        if (got != atoi(v)) {
+            printf("FAIL expect %s %s %s %s%s%s == %s, got %d\n", what, t, pt, st, at ? " " : "", at ? i : "", v, got);
+            host_fails++;
+        } else
+            printf("  ok %s %s %s %s%s%s == %d\n", what, t, pt, st, at ? " " : "", at ? i : "", got);
     } else if (!strcmp(what, "pool")) {            /* expect pool T PAT MASK: a random pattern's pitch-class pool */
         char t[16], pt[16], v[16];
         int got;
@@ -652,6 +676,17 @@ static int expect_more(const char *what, const char *a, const char *b, const cha
             host_fails++;
         } else
             printf("  ok lane %s %s %s: %d steps\n", t, pt, pn, got);
+    } else if (!strcmp(what, "lock")) {            /* expect lock T PAT S PARAM V: a lane's value on a step */
+        char t[16] = {0}, pt[16] = {0}, st[16] = {0}, pn[24] = {0}, v[16] = {0};
+        int ln, got;
+        sscanf(plat_host_line, "%*s %*s %15s %15s %15s %23s %15s", t, pt, st, pn, v);
+        ln = lane_find(pats.lane, atoi(t) - 1, atoi(pt) - 1, param_of(pn));
+        got = ln >= 0 && atoi(st) >= 1 && atoi(st) <= NSTEP ? pats.lane[ln].val[atoi(st) - 1] : -1;
+        if (got != atoi(v)) {
+            printf("FAIL expect lock %s %s %s %s = %s, got %d\n", t, pt, st, pn, v, got);
+            host_fails++;
+        } else
+            printf("  ok lock %s %s %s %s: %d\n", t, pt, st, pn, got);
     } else if (!strcmp(what, "weave")) {           /* expect weave PAT S MASK LEN: the WEAVE track's step */
         char pt[16] = {0}, st[16] = {0}, m[16] = {0}, l[16] = {0};
         const wv_step_t *w;
@@ -1404,6 +1439,11 @@ int app_host_cmd(const char *cmd, const char *a, const char *b, const char *c, c
         return 1;
     if (!strcmp(cmd, "expect"))
         return expect_more(a, b, c, d);
+    if (!strcmp(cmd, "drumhit")) {                  /* drumhit K VEL: the selected kit track's key K (from 1) hit at VEL,
+                                                     * as a step plays it */
+        s_drum(0, proj.trk_sel, atoi(a) - 1, atoi(b), 0, 0, 0);
+        return 1;
+    }
     if (!strcmp(cmd, "row")) {                      /* row NAME: the open list's row of that name picked (as SELECT
                                                      * would: remembered), whatever the order; none: a failure */
         const char *nm = plat_host_line + 3;

@@ -162,6 +162,7 @@ static void cc_in_drain(void);                    /* midicc.c: MIDI in's CCs, Pr
 static void cc_out_param(int trk, int p);         /* midicc.c: a parameter changed (sent when by hand, CC OUT on) */
 static void cc_out_master(int m);
 static void cc_out_scene(int n);                  /* midicc.c: the scene playing changed */
+static void cc_out_mutes(void);                   /* midicc.c: a track's mute changed: its CC 9 */
 static uint8_t cc_hand;                           /* (midicc.c's: knob() and list_change() running) */
 static void sound_reset(uint8_t *par, int engine)   /* the engine's defaults; MIDI OUT stays (routing, not sound) */
 {
@@ -306,8 +307,13 @@ static void load_preset(int trk, const preset_t *pr)
     undo_sound(trk);
     memcpy(par, pr->par, NTP_SOUND);
     par[TP_O2FINE] = 64;                         /* (the factory presets: no fine tune) */
-    for (int i = 0; i < NAME_LEN; i++)
-        proj.trk[trk].name[i] = pr->name[i] ? pr->name[i] : 0;
+    {                                            /* (the name's string ends at its 0: nothing read past it) */
+        int i = 0;
+        for (; i < NAME_LEN && pr->name[i]; i++)
+            proj.trk[trk].name[i] = pr->name[i];
+        for (; i < NAME_LEN; i++)
+            proj.trk[trk].name[i] = 0;
+    }
     engine_set_all(trk);
     mark_dirty();
 }
@@ -598,7 +604,7 @@ static void play_press(void)
     }
     if (ui.page == P_SONG) {
         if (!pats.song.len) {
-            say_no("NO SONG", "white keys add scenes");
+            say_no("NO SONG", "press a white key");
             return;
         }
         int from = ui.name_slot < pats.song.len ? ui.name_slot : 0;   /* from the slot picked (SLOT), else the first */
@@ -649,7 +655,7 @@ static void rec_tap(void)                        /* REC released, unused, while 
     ui.rec_armed = (uint8_t)!ui.rec_armed;
     if (ui.rec_armed) {
         step_rec_start();
-        say("STEP RECORD", "keys write steps");
+        say("STEP RECORD", "play keys to write");
     } else
         say("RECORD OFF", 0);
 }
@@ -1066,6 +1072,19 @@ static void step_rec_move(int d)                  /* the cursor a step on (a res
         ann_later(t, 0, 150u, plat_ms());
     }
 }
+static void step_rec_clear(void)                  /* REC held + OCT: the cursor's step emptied (a kit's: its sounds' own settings too) */
+{
+    int trk = sel_trk();
+    step_t *st = &tpat(trk)->st[ui.cursor];
+    undo_keep();
+    if (is_drum(trk))
+        for (int k = 0; k < NDRUM; k++)
+            if (kit_has(st, k + 1))
+                hit_sound_off(trk, cur_pat(trk), ui.cursor, k);
+    memset(st, 0, sizeof *st);
+    st->vel = 100;
+    mark_dirty();
+}
 static void step_rec_key_up(void)
 {
     if (ui.srec_down && !--ui.srec_down)
@@ -1130,6 +1149,13 @@ static void chord_add(int note)
             return;
     if (ui.nchord < 8)
         ui.chord[ui.nchord++] = (uint8_t)note;
+}
+static void chord_remember(int note)   /* the key's note into the chord down, and the chord is what a step writes next */
+{
+    chord_add(note);
+    for (int i = 0; i < SN && i < ui.nchord; i++)
+        ui.rem[i] = ui.chord[i];
+    ui.nrem = (uint8_t)(ui.nchord > SN ? SN : ui.nchord);
 }
 static void chord_del(int note)
 {
@@ -1201,6 +1227,17 @@ static void scene_go(int n, int when)
     proj.scene = (uint8_t)n;
 }
 static int scene_aim(void) { return seq.cue < NSCENE ? seq.cue : cur_scene(); }   /* the knob steps from the cue */
+static int scene_next(int d)                     /* PRESETS (HOME held anywhere, Arrange alone): the next scene in use
+                                                  * from the cue, round; it makes none (a white key does: #28) */
+{
+    int n = scene_aim();
+    for (int i = 0; i < NSCENE; i++) {
+        n = ((n + d) % NSCENE + NSCENE) % NSCENE;
+        if (pats.scene[n].used)
+            break;
+    }
+    return n;
+}
 static void scene_key(int k, int w, int when)    /* a white key on Arrange; again while its scene waits: now */
 {
     char t[8];
@@ -1310,10 +1347,7 @@ static void keyboard_down(int k)
         ui.kmode[k] = KM_BRAIN;
         ui.knote[k] = (uint8_t)key_note(k);
         engine_brain_key(key_note(k), 1);
-        chord_add(key_note(k));
-        for (int i = 0; i < SN && i < ui.nchord; i++)
-            ui.rem[i] = ui.chord[i];
-        ui.nrem = (uint8_t)(ui.nchord > SN ? SN : ui.nchord);
+        chord_remember(key_note(k));
         if (srec)
             step_rec_key(key_note(k));
         return;
@@ -1354,9 +1388,7 @@ static void keyboard_down(int k)
                     say("KEY", DL_SOUND_NAME[ui.dsound]);
             }
         } else if (!is_aux(sel_trk())) {
-            for (int i = 0; i < SN && i < ui.nchord; i++)
-                ui.rem[i] = ui.chord[i];
-            ui.nrem = (uint8_t)(ui.nchord > SN ? SN : ui.nchord);
+            chord_remember(note);
         }
         if (srec && !is_aux(sel_trk()))
             step_rec_key(note);
@@ -1634,7 +1666,7 @@ static void key_down(int k)
         if (wv_from(trk)) {
             char t[24];
             num_s((uint32_t)wv_pat(trk) + 1u, s_cat(s_cat(t, TRACK_NAME[wv_from(trk) - 1]), " P"));
-            say("WEAVES WITH", t);
+            say("WOVEN IN", t);
         } else
             say("NO WEAVE", TRACK_NAME[trk]);
         return;
@@ -1746,9 +1778,10 @@ static void key_up(int k)
         if (!ui.held_used && !ui.held_multi && plat_ms() - ui.key_t[k] < STEP_TAP_MS)
             step_toggle(w);                      /* a tap; a longer hold only looked at the step */
         ui.held &= (uint16_t)~(1u << w);
-        if (!ui.held)                            /* (chord mode stays on past the step's own release) */
+        if (!ui.held) {                          /* (chord mode stays on past the step's own release) */
             ui.lockpg = ui.trickpg = 0;
-        else
+            lst.open = 0;                        /* its SEL list is the held step's: let go, and it goes */
+        } else
             for (int i = 0; i < 16; i++)
                 if (ui.held >> i & 1u) {
                     ui.held_first = (uint8_t)i;
@@ -1898,7 +1931,7 @@ static void button_up(int b)
         break;
     case B_OCTDN: case B_OCTUP: {
         int d = b == B_OCTUP ? 1 : -1;
-        char t[8];
+        char t[12];
         if (ui.chordmode && ui.page == P_STEPS) {   /* chord mode: the keyboard's octave, not the step's nudge or bar */
             ui.oct = (int8_t)clampi(ui.oct + d, -4, 4);
             t[0] = ui.oct < 0 ? '-' : '+';
@@ -1911,10 +1944,24 @@ static void button_up(int b)
             step_nudge(d);
             break;
         }
-        if (ui.rec_armed && !playing() && is_seqt(sel_trk())) {   /* OCT+ a rest, OCT- back a step */
+        if (ui.rec_armed && !playing() && is_seqt(sel_trk())) {   /* OCT+ a step on, OCT- back a step, the steps kept;
+                                                                    * REC held: OCT+ clears the step and goes on (a
+                                                                    * rest), OCT- goes back and clears that one */
+            int clr = ui.btn >> B_REC & 1u;
+            if (clr) {
+                ui.btn_used |= 1u << B_REC;         /* (REC's release: not a tap, step record stays on) */
+                if (d < 0)
+                    step_rec_move(-1);
+                num_s((uint32_t)ui.cursor + 1u, s_cat(t, "step "));
+                step_rec_clear();
+                if (d > 0)
+                    step_rec_move(1);
+                say("CLEARED", t);
+                break;
+            }
             step_rec_move(d);
             num_s((uint32_t)ui.cursor + 1u, t);
-            say(d > 0 ? "REST" : "BACK", t);
+            say(d > 0 ? "SKIP" : "BACK", t);
             break;
         }
         if (steps_page(ui.page) && (ui.btn >> B_SEQ & 1u) && !home_held()) {
@@ -2192,6 +2239,16 @@ static void fx_pick(int trk, int d)              /* the effect (the reverb's mod
         say("EFFECT", fx_label(t));
     }
 }
+/* an effect track's knob p turned by e: the delay's time a note value a click (13 d + 6: in the tenth d, fx.h) */
+static __attribute__((noinline)) int fx_turned(int ft, int p, int32_t e)
+{
+    const uint8_t *par = proj.trk[ft].par;
+    int d;
+    if (p != TP_E1 || fx_pick_type(par[TP_ENGINE] % NFXPICK) != FXT_DELAY)
+        return par[p] + (int)e;
+    d = fx_delay_div(par[p]) + (e > 0 ? 1 : -1);
+    return d < 0 ? 6 : d >= FX_DL_N ? 13 * FX_DL_N - 7 : 13 * d + 6;
+}
 static void aux_knob(int trk, int k, int32_t e)
 {
     const uint8_t *par = proj.trk[trk].par;
@@ -2202,7 +2259,7 @@ static void aux_knob(int trk, int k, int32_t e)
         hi = p == TP_E2 ? 11 : p == TP_E3 ? NBS - 1 : 8;   /* key, scale; link and FOLLOW: off, T1-T8 */
     else if (trk == AUX_PUNCH || trk == AUX_WEAVE)
         hi = 1;
-    set_tp(trk, p, clampi(par[p] + e, 0, hi));
+    set_tp(trk, p, clampi(is_fx(trk) ? fx_turned(trk, p, e) : par[p] + e, 0, hi));
 }
 /* SEL held, a knob turned: that knob's automation (its motion and locks) cleared, from the pattern, or from the steps
  * held (the lock editor's knob) */
@@ -2288,7 +2345,7 @@ static void knob_do(int k, int32_t e)
     }
     if (fx_page(ui.page)) {                      /* an effect's knobs: the effect track's own */
         int ft = ui.page == P_FX1 ? AUX_FX1 : AUX_FX2;
-        set_tp(ft, TP_E1 + k, proj.trk[ft].par[TP_E1 + k] + (int)e);
+        set_tp(ft, TP_E1 + k, fx_turned(ft, TP_E1 + k, e));
         return;
     }
     if (ui.page == P_SENDS) {
@@ -2339,7 +2396,7 @@ static void presets(int32_t e)
     }
     switch (ui.page) {
     case P_ARRANGE:
-        scene_go(((scene_aim() + d) % NSCENE + NSCENE) % NSCENE, SCENE_BAR);
+        scene_go(scene_next(d), SCENE_BAR);
         break;
     case P_SONG:
         song_knob(0, d);
@@ -2559,12 +2616,15 @@ static void list_change_do(int32_t e)
         case A_SAVE_KIT: ui.pick_kslot = (uint8_t)((ui.pick_kslot + d + NUSER_KITS) % NUSER_KITS); break;
         case A_LOAD_PROJ: ui.pick_slot = (uint8_t)((ui.pick_slot + d + NPROJ) % NPROJ); break;
         case A_SAVE_TO: ui.pick_save = (uint8_t)((ui.pick_save + d + NPROJ) % NPROJ); break;
-        case A_USB_AUDIO:
-            if (proj.usb_full != (uint8_t)(d > 0)) {
-                proj.usb_full = (uint8_t)(d > 0);
+        case A_USB_AUDIO: {                           /* follows knob, full, stereo */
+            int v = (int)proj.usb_full + (d > 0 ? 1 : -1);
+            v = v < 0 ? 0 : v > 2 ? 2 : v;
+            if (proj.usb_full != (uint8_t)v) {
+                proj.usb_full = (uint8_t)v;
                 mark_dirty();
             }
             break;
+        }
         case A_BT_AUDIO:
             if (bt.want != (uint8_t)(d > 0))
                 bt_audio_set(d > 0);
@@ -2897,7 +2957,7 @@ static void weave_key(int k, int on)
         ui.wv_held &= (uint16_t)~m;
     seq.wv_live = (uint16_t)(ui.wv_held | ui.wv_latched);
     if (on && !wv_from(w))
-        say_no(TRACK_NAME[w], "no weave set: its ARP, Weave");
+        say_no(TRACK_NAME[w], "set one on its ARP's Weave");
 }
 static void weave_set(int t, int from, int pat, int rule)
 {
@@ -3962,7 +4022,8 @@ static void input(void)
         ui.act_t = plat_ms();
     if (ui.ask)
         return;
-    if ((e = ev[EN_SELECT]) != 0 && ui.lockpg) {  /* the lock editor: the module's other pages (the track's own) */
+    if ((e = ev[EN_SELECT]) != 0 && ui.lockpg && !lst.open) {   /* the lock editor: the module's other pages (the
+                                                  * track's own); a list open over it keeps SELECT for its rows */
         int g = page_group(ui.lockpg - 1), f = PAGE_BTN[g].first, n = group_n(g), pg = ui.lockpg - 1 - f;
         if (PAGE_BTN[g].btn == B_FX) {           /* the track's own: Character and Sends */
             f = P_CHARACTER;
@@ -3993,7 +4054,7 @@ static void input(void)
     }
     if ((e = ev[EN_PRESET]) != 0) {
         if (home_held())
-            scene_go(((scene_aim() + (e > 0 ? 1 : -1)) % NSCENE + NSCENE) % NSCENE, SCENE_BAR);
+            scene_go(scene_next(e > 0 ? 1 : -1), SCENE_BAR);
         else
             presets(e);
     }
@@ -4074,8 +4135,20 @@ static void leds(void)
                         mid |= 1u << BLACK_K[i];
                 }
             k |= ui.keys;                         /* (white keys: play, same as every other page) */
-        } else
+        } else {
             k |= ui.keys;
+            if (trk == AUX_BRAIN) {               /* the conductor: the key its degree stands for (pressing it sets
+                                                  * this degree), the same note in other octaves at the mid level */
+                int r = seq_brain_root(&seq);
+                for (i = 0; i < 27; i++) {
+                    int d = key_note((int)i) - r;
+                    if (!d)
+                        k |= 1u << i;
+                    else if (d % 12 == 0)
+                        mid |= 1u << i;
+                }
+            }
+        }
         if (sel_trk() == AUX_WEAVE && !steps_page(ui.page))   /* the tracks weaving: their keys */
             for (i = 0; i < NSEQT; i++)
                 if ((seq.wv_live | seq.wv_rec) >> i & 1u)
@@ -4591,14 +4664,14 @@ static void speak_dump(void)
         {"SAVED", 0}, {"NOT SAVED", "flash error"}, {"UNDO", "T1 P1"}, {"REDO", "T1 P1"}, {"NOTHING TO UNDO", 0},
         {"NOTHING TO REDO", 0}, {"COUNT-IN", "then recording"}, {"RECORDING", "latched"}, {"RECORDING", "on the first note"}, {"SOLO", "T1"}, {"PLAY FROM BAR", "2"},
         {"SOLO OFF", 0}, {"RECORDING", "play to start"},
-        {"RECORD OFF", 0}, {"STEP RECORD", "keys write steps"},
+        {"RECORD OFF", 0}, {"STEP RECORD", "play keys to write"},
         {"LENGTH", "to step 4"}, {"NUDGE", "+2"},
         {"NO LANE LEFT", "clear locks first"}, {"LOCKS CLEARED", 0}, {"NEW", "S3"}, {"MUTED", "T1"}, {"UNMUTED", "T1"},
         {"INSERTED", "S2"}, {"T3", 0}, {"SOUND", "snare"}, {"KEY", "snare"}, {"SCALE", "1/2"}, {"BAR", "2"}, {"CURSOR", "5"},
         {"OCTAVE", "+1"}, {"PRESET", "U3 knit"}, {"EFFECT", "delay"}, {"CLEARED", "notes"}, {"COPIED", "pattern"},
         {"PASTED", "pattern"}, {"WOVEN", "copied rhythm"}, {"ROTATED", "forward"}, {"DUPLICATED", "bar"}, {"NO ROOM", "four bars at most"},
         {"SCRAMBLED", 0}, {"PRESET SAVED", "U2"}, {"RESET", "knit"}, {"SONG FULL", "64 slots"}, {"NO SLOT HERE", 0},
-        {"NO SONG", "white keys add scenes"}, {"LOADED", "slot 2"}, {"EMPTY SLOT", "defaults loaded"}, {"OLD FORMAT", "defaults loaded"},
+        {"NO SONG", "press a white key"}, {"LOADED", "slot 2"}, {"EMPTY SLOT", "defaults loaded"}, {"OLD FORMAT", "defaults loaded"},
         {"NEW PROJECT", "unsaved"}, {"RANDOMIZED", "T2 to T8"}, {"SCENE IN USE", "pick another first"}, {"ALL NOTES OFF", 0},
         {"STOP FIRST", "to change slots"}, {"THREE SLOTS", "white keys 1 to 3"}, {"ENGINE", "jacquard"}, {"LIST", "nothing here"},
         {"DELETED", "slot"}, {"REMOVED", 0}, {"NO EFFECT YET", "play a key on EDIT"}, {"NO SEGMENT YET", "play a key on EDIT"},
@@ -4606,8 +4679,8 @@ static void speak_dump(void)
         {"BT AUDIO", "refused"}, {"BT AUDIO", "lost"}, {"BT AUDIO", "no answer"}, {"CONNECTING", "Speaker"},
         {"CONNECTED", 0}, {"NO ANSWER", 0}, {"DEVICE LOST", 0}, {"DISCONNECTED", 0}, {"FORGOTTEN", "Speaker"},
         {"NO DEVICE", "computer connected"}, {"NO DEVICE", "look again"}, {"LOOKING", "for headphones, speakers"},
-        {"PIN", "0 4 2 6 1 3"}, {"BT MIDI", "on"}, {"BT MIDI", "off"}, {"BT MIDI OFF", "turn it on first"}, {"looking for devices...", 0}, {"still looking. SEL connects", 0},
-        {"pick a device. SEL connects", 0}, {"none found. In pairing mode?", 0}, {"connected. SEL lets it go", 0},
+        {"PIN", "0 4 2 6 1 3"}, {"BT MIDI", "on"}, {"BT MIDI", "off"}, {"BT MIDI OFF", "turn it on first"}, {"looking for devices...", 0}, {"pick one and press SEL", 0},
+        {"pick one and press SEL", 0}, {"none found. In pairing mode?", 0}, {"Press SEL to disconnect", 0},
         {"connecting...", 0}, {"looking for MIDI devices...", 0}, {"none found yet. Is it on?", 0}};
     static const char *const ASK[] = {"CLEAR SCENE 3?", "REPLACE USER PRESET 2?", "REPLACE PROJECT 2?", "REPLACE KIT K2?",
                                       "LOSE UNSAVED CHANGES?", "NEW PROJECT?", "CLEAR THE SONG?",
@@ -4779,6 +4852,7 @@ void ui_frame(void)
         if (!ui.playing)
             rec_off();
     }
+    cc_out_mutes();
     if (cur_scene() != ui.scene_seen) {
         if (ui.scene_seen != 0xFF)               /* not boot's first catch-up: no Program Change for that */
             cc_out_scene(cur_scene());            /* (MIDI: its Program Change, midicc.c) */

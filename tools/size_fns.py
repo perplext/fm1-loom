@@ -40,33 +40,46 @@ SIZE_FILES = ["app/ui.c", "app/pages.c", "app/project.c", "app/lz.c", "app/sampl
               "app/library.c", "app/templates.c",
               "app/plat_loom.c", "base/device/panel.c", "base/device/main_fm1.c", "base/device/gfx.c",
               "base/device/storage.c", "base/bsp/chip/ota.c", "base/device/announce.c", "base/device/backup.c"]
+# (voice_chunk and voice_subblock left it 2026-11-14: a voice's set-up every 64 / 16 samples, 16 % and 7 % of its time
+# on the FM-1; at -O2 the voices -4 % (pop's both cores 47.1 -> 45.3 %), 2.35 KB of flash)
+# (seq.c's and pattern.c's per-step and per-note code joined 2026-11-14: the six demo songs on the FM-1 the same within
+# noise, mean and slowest block, the sequencer's share of the slowest block too; 3.3 KB of flash)
 COLD = {
     "dsp/drumline.c": ["start", "knob", "drumline_filter", "drumline_hit", "reso_set", "drumline_init"],
     "dsp/fx.c": ["fx_derive", "eq_coefs", "fx_filter", "master_set", "master_init", "comp_coefs",
-                 "fx_set", "fx_init"],
-    "dsp/sample.c": ["smp_user_scan", "fact_init"],
+                 "fx_set", "fx_init", "delay_time", "delay_secs", "fx_delay_halves", "color_coefs", "biq_shelf",
+                 "fx_clear", "master_clear", "coef_ms", "master_pump_ms"],
+    "dsp/sample.c": ["smp_user_scan", "fact_init", "smp_bank_crc", "smp_name"],
     "dsp/digisophie.c": [],
     "dsp/d909.c": ["d909_start", "d9_biquad_set", "d9_shape_prep", "d9_env_exp"],
-    "dsp/bass303.c": ["bass303_init", "rat_coeffs", "bq_low_shelf", "bq_lowpass"],
+    "dsp/bass303.c": ["bass303_init", "rat_coeffs", "bq_low_shelf", "bq_lowpass", "bass303_set", "env_tables",
+                      "bass303_note_on"],
     "dsp/bench.c": [],
     "dsp/synth.c": ["tp_text_i", "tp_text_par", "tp_info_par", "tp_text", "char_picture",
                     "synth_note_off", "synth_duck_trigger", "synth_all_off",
-                    "sound_default", "synth_init", "eknob_init", "voice_chunk", "voice_subblock", "synth_prepare",
+                    "sound_default", "synth_init", "eknob_init", "synth_prepare",
+                    "hz_text", "ms_text", "organ_bars", "synth_cut",
                     "wall_prep", "wall_run"],
-    "seq/pattern.c": [],
+    "seq/pattern.c": ["pattern_init", "patterns_init", "lane_alloc", "lane_clear", "lane_count", "lane_pool_set",
+                      "lane_pool_free", "step_clear_locks", "pattern_clear_locks", "step_set_notes",
+                      "step_toggle_note", "kit_set", "kit_toggle", "kit_add", "pattern_woven", "weave_step",
+                      "notes_cross", "step_hit"],   # (the UI's edits, a recording's lanes, a step's weave)
     "seq/seq.c": ["fire_notes", "key_in", "seq_init", "bar_end", "do_start", "emit_drum", "rec_key_off",
                   "rec_key_on", "restart", "track_reset", "seq_rec_pos", "deg_to_note", "seq_cue_pattern",
-                  "arp_stop", "keys_all_off",
-                  # what the panel and the host run (an edit, a transport change, a setting), never a tick
+                  "arp_stop", "keys_all_off", "seq_bar_go", "scene_read", "jump_set", "arp_fire", "kit_group",
+                  "apply_locks", "kit_emit", "step_note", "brain_note", "next_pos", "roll_fire", "step_roll_fire",
+                  "kit_lanes", "chord_at", "groove_vel", "fill_hit", "rand_wrap", "midi_on", "fill_collect",
+                  "brain_chord_of_root", "fire_off", "add_off", "sounding_off", "grid_index", "loop_release",
+                  "brain_set_near_notes", "lane_masks_make", "kit_rec_fresh", "tracks_go", "brain_shift", "arp_off",
+                  "bar_len_update",
+                  # (the fork's: what the panel and the host run, an edit, a transport change, never a tick)
                   "seq_cue_left", "seq_cue_scene", "seq_set_scene", "seq_start", "seq_start_at", "seq_stop",
-                  "seq_continue", "seq_tempo", "seq_bar_go", "seq_bar_step", "seq_rec", "seq_rec_knob",
-                  "seq_step_add_notes", "seq_step_rec", "seq_maestro_record", "seq_punch_key", "seq_punch_mask",
-                  "strum_learn", "kit_rt_clear", "kit_rec_fresh", "lane_forget",
-                  "lane_masks_make", "lock_put", "rand_begin", "rand_end", "rand_notes", "rand_pool", "rand_track",
-                  "rand_wrap", "rec_count_in", "rec_go", "rec_step1", "do_stop", "scene_read", "jump_set", "resync",
-                  "seq_key_all_off", "seq_midi_notes_off", "phys_set", "tracks_go", "loop_after", "loop_before",
-                  "loop_from", "loop_release", "maestro_play", "seq_key", "seq_key_midi", "brain_key_in",
-                  "brain_set_chord", "brain_set_near", "brain_set_near_notes", "brain_set_root",
+                  "seq_continue", "seq_tempo", "seq_bar_step", "seq_rec", "seq_rec_knob", "seq_step_add_notes",
+                  "seq_step_rec", "seq_maestro_record", "seq_punch_key", "seq_punch_mask", "strum_learn",
+                  "kit_rt_clear", "lane_forget", "lock_put", "rand_begin", "rand_end", "rand_notes", "rand_pool",
+                  "rand_track", "rec_count_in", "rec_go", "rec_step1", "do_stop", "resync", "seq_key_all_off",
+                  "seq_midi_notes_off", "phys_set", "loop_after", "loop_before", "loop_from", "maestro_play",
+                  "seq_key", "seq_key_midi", "brain_key_in", "brain_set_chord", "brain_set_near", "brain_set_root",
                   "brain_set_root_notes", "chord_word", "seq_brain_key"],
 }
 # the two FX slots' and the master's per-sample code, closed under calls (~18 KB; the 24 KB RAMTEXT region holds

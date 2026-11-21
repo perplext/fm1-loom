@@ -61,6 +61,11 @@ typedef char raw_fits[(RAW_LEN < 0x100000u) ? 1 : -1];   /* (lz.c packs up to 16
 #define TRK15 (NTP15 + NAME_LEN + 4u)
 #define NTP18 ((uint32_t)TP_RUP)                          /* formats 16..18's: up to knit's osc 2 fine */
 /* the random player's one octave knob before 19 (TP_P4, 0..24: PR #13's path about its centre) as down * 4 + up */
+/* before 21: the arp's speeds without the dotted ones (1/4 1/4T 1/8 1/8T 1/16 1/16T 1/32 1/32T 1/64: old_arp, to
+ * synth.h's order), the delay's times 1/32 1/32D 1/16 1/16D 1/8 1/8D 1/4 1/2 (the knob in eighths; now fx.h's, in tenths: 1/2,
+ * which the line always halved, to 1/4: each the knob at the middle of its new tenth) */
+static const uint8_t OLD_DLY[8] = {6, 32, 44, 70, 83, 108, 121, 121};
+static uint8_t old_arp(uint8_t v) { return v == LOCK_NONE ? v : v > 8u ? 10u : (uint8_t)(v + (v > 0u) + (v > 2u)); }
 static const uint8_t OLD_OCT[25] = {15, 11, 7, 14, 10, 6, 13, 9, 5, 12, 8, 4, 0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15};
 typedef char settings_head_fits[(SET_HDR + 4u + 64u <= PLAT_STORE_MAX && SET_OLD == 3804u) ? 1 : -1];   /* (format 14's size) */
 typedef char trk_layout[(offsetof(trk_t, name) == NTP && sizeof(trk_t) == NTP + NAME_LEN + 4u) ? 1 : -1];
@@ -458,6 +463,11 @@ uint8_t loom_io_buf[PLAT_STORE_MAX] __attribute__((aligned(4))) PLAT_POOL;   /* 
  * objects that changed: a save of a tweaked pattern usually erases one or two sectors, not seven */
 static uint32_t stored_hash[OBJ_NOBJ];
 static uint8_t stored_known[OBJ_NOBJ];
+/* which slots hold a project, as project_exists last read them (a bit a slot): HOME's list asks every frame (LOAD
+ * PROJECT, SAVE TO on another slot), and a store read keeps interrupts off a while, so the LED scan stalls (the black
+ * keys' mid level flickered). Forgotten at every write and a restore */
+static uint8_t slot_known, slot_have;
+_Static_assert(NPROJ <= 8, "a bit a slot");
 static uint32_t hash_of(const uint8_t *p, uint32_t n)        /* FNV-1a */
 {
     uint32_t h = 2166136261u;
@@ -502,6 +512,7 @@ static int save_buf(uint32_t obj, uint32_t n)
     if (store_held)
         return -2;
     rc = loom_store_save(obj, io_buf, n);
+    slot_known = 0;
     stored_known[obj] = rc == 0;
     stored_hash[obj] = h;
     return rc;
@@ -792,6 +803,14 @@ int project_load(int slot)
             glfo_defaults(proj.trk[AUX_BRAIN].par);
         if (load_format < 20u)                        /* (before 20 no PING WIDTH: the full bounce they had) */
             proj.trk[AUX_FX1].par[TP_FX_WIDTH] = proj.trk[AUX_FX2].par[TP_FX_WIDTH] = 127;
+        if (load_format < 21u) {                      /* (before 21 no dotted arp speeds, the delay's times fewer) */
+            for (int t = 0; t < NTRK; t++)
+                if (proj.trk[t].par[TP_PLAYER] % NPL == PL_ARP)
+                    proj.trk[t].par[TP_P1] = old_arp(proj.trk[t].par[TP_P1]);
+            for (int t = AUX_FX1; t <= AUX_FX2; t++)
+                if (fx_pick_type(proj.trk[t].par[TP_ENGINE] % NFXPICK) == FXT_DELAY)
+                    proj.trk[t].par[TP_E1] = OLD_DLY[(proj.trk[t].par[TP_E1] & 127u) >> 4];
+        }
         if (load_format < 14u)                        /* (before 14, off (FT_DYNAMIC) sat at 4 and bp12 at 5: swap) */
             for (int t = 0; t < NTRK; t++) {
                 uint8_t ft = proj.trk[t].par[TP_FTYPE];
@@ -839,6 +858,13 @@ int project_load(int slot)
     } else {
         bad = 1;
     }
+    if (load_format < 21u)                            /* (the arp speeds' locks too: above) */
+        for (int k = 0; k < NLANE; k++) {
+            lane_t *L = &pats.lane[k];
+            if (L->used && L->param == TP_P1 && L->trk < NTRK && proj.trk[L->trk].par[TP_PLAYER] % NPL == PL_ARP)
+                for (int i = 0; i < NSTEP; i++)
+                    L->val[i] = old_arp(L->val[i]);
+        }
     migrated = !bad && load_format != PROJ_FORMAT ? (uint8_t)slot : 0xFF;
     return bad ? -1 : 0;
 }
@@ -930,13 +956,24 @@ int project_touch(int slot)                       /* (only the settings change: 
     return n < 0 || save_buf(OBJ_PROJ(slot, 0), (uint32_t)n) < 0 ? -1 : 0;
 }
 
+#ifdef PLAT_HOST
+static uint32_t slot_reads;                           /* (the simulator's count: expect slot_reads) */
+#endif
 int project_exists(int slot)
 {
     int n;
     if (slot < 0 || slot >= NPROJ)
         return 0;
+    if (slot_known >> slot & 1u)
+        return slot_have >> slot & 1u;
+#ifdef PLAT_HOST
+    slot_reads++;
+#endif
     n = plat_store_load(OBJ_PROJ(slot, 0), io_buf, 8);
-    return n >= 8 && get32(io_buf) == PROJ_MAGIC && FORMAT_OK(get32(io_buf + 4));
+    n = n >= 8 && get32(io_buf) == PROJ_MAGIC && FORMAT_OK(get32(io_buf + 4));
+    slot_known |= (uint8_t)(1u << slot);
+    slot_have = (uint8_t)(n ? slot_have | 1u << slot : slot_have & ~(1u << slot));
+    return n;
 }
 
 int presets_load(void)

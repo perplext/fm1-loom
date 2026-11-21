@@ -192,7 +192,10 @@ enum { GD_CUT, GD_RES, GD_PITCH, GD_PAN, GD_VOL, GD_SEND1, GD_SEND2, GD_CHAR, NG
 enum { LD_SYNTH, LD_ENV, LD_FILTER, LD_AMP, LD_FREE = 4, NLD = 8 };   /* TP_LDEST: module (LD_AMP: "voice"), + LD_FREE = free-running */
 #define LS_SYNC_N 8                                /* TP_LSPEED values below this are synced divisions */
 enum { PL_OFF, PL_ARP, PL_STRUM, PL_HOLD, PL_RAND, NPL };
-/* arp: P1 speed (1/4 1/4T 1/8 1/8T 1/16 1/16T 1/32 1/32T 1/64), P2 pattern (up, down, bounce (up and down, the
+#define NARPSPD 11
+#define ARP_1_16 6                                 /* the arp's speed 1/16 (its default) */
+/* arp: P1 speed (1/4 1/8D 1/4T 1/8 1/16D 1/8T 1/16 1/16T 1/32 1/32T 1/64; before project
+ * format 21 no dotted ones: project.c migrates), P2 pattern (up, down, bounce (up and down, the
  * ends once), bounce+ (the ends repeated), as played, random), P3 range 1..4 octaves, P4 hold; its page 2 is
  * TP_AP1..AP4 = note length (short medium long), style (off, pedal, thirds, double, skip, swap: seq.c
  * arp_style_pos), glide (off low high), stereo (mono narrow wide). strum: P1 roll 0..63 (63 = a note per sequencer step of the
@@ -239,6 +242,9 @@ void char_bus(chbus_t *c, const uint8_t *par, float *l, float *r, int n);
 /* the Engine page's picture of the organ: the six drawbars' levels (16' 8' 4' 2 2/3' 2' 1 1/3', 0..1, the loudest 1) that
  * stops and pedal set (organ_prep's registration) */
 void organ_bars(const uint8_t *par, float bars[6]);
+/* jacquard's table t (0..8) at scan 0..1 and phase 0..1, -1..1, as a voice reads it (the engine's picture) */
+float wt_value(int t, float scan, float ph);
+#define WT_FRAMES 16                               /* (wavetables.h's WT_NFRAME) */
 /* a track's level (TP_LEVEL) as a gain: a fader's law, cubic (60 dB over 0..100: half way -18 dB), 100 = 0 dB,
  * 127 = +6.2 dB, 0 = off. The drums and the FX returns take it as is; the synth's voices with 100/127 under it
  * (their headroom: synth.c) */

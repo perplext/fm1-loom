@@ -149,7 +149,9 @@ static void usb_host_poll(void)
 }
 void app_frame(void)
 {
-    plat_usb_audio_full(proj.usb_full);             /* Setup's USB AUDIO: follows the knob, or full */
+    plat_usb_audio_full(proj.usb_full != 0);        /* Setup's USB AUDIO: follows the knob, full, or stereo (full,
+                                                     * the master alone) */
+    eng_usb_stereo = proj.usb_full == 2;
     usb_host_poll();
     ui_frame();
 }
@@ -184,6 +186,7 @@ void app_backup_hold(int on) { store_held = (uint8_t)(on != 0); }
 void app_backup_restored(void)
 {
     memset(stored_known, 0, sizeof stored_known);  /* (what project.c knew of the flash is stale) */
+    slot_known = 0;
     if (project_load(proj_slot) != 0)
         proj_slot = 0;
     presets_load();

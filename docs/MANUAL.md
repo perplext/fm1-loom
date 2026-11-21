@@ -26,6 +26,7 @@ To see it played first, watch the [LOOM-8 video](https://www.youtube.com/watch?v
 - [Mix and master](#mix-and-master)
 - [Saving](#saving)
 - [Page by page](#page-by-page)
+- [Troubleshooting](#troubleshooting)
 - [Screen reader](#screen-reader)
 
 ## Quick start
@@ -44,7 +45,7 @@ keys 1 to 11.
    **REC** and play the notes one after another, and each one lands on the next step. Press **EDIT** and turn
    **KNOB 1** while it plays to hear the shape change.
 
-   <img src="img/screen-seq-held.png" width="240" alt="Steps on T2 with SEQ held: the keys play notes, and the line above the grid says the notes a step will write" title="SEQ held on Steps"> <img src="img/screen-step-record2.png" width="240" alt="Step record on T2: the red cursor on the next step after the notes written so far; the footer says KEYS write, OCT+ rest, OCT- back, REC done" title="Step record">
+   <img src="img/screen-seq-held.png" width="240" alt="Steps on T2 with SEQ held: the keys play notes, and the line above the grid says the notes a step will write" title="SEQ held on Steps"> <img src="img/screen-step-record2.png" width="240" alt="Step record on T2: the red cursor on the next step after the notes written so far; the footer says KEYS write, OCT skip or back, REC+OCT clear, REC done" title="Step record">
 3. **Tricks.** Still on T2, hold white key 7 and press **ARP**. Turn **KNOB 1** to multiply and **KNOB 2** to 3,
    and step 7 plays three hits. Let go. Now hold white key 14, press **ARP**, turn **KNOB 1** to jump and **KNOB 2**
    to "either", and the pattern starts to wander. Last, hold white key 1, press **ARP** and turn **KNOB 1** to
@@ -60,7 +61,8 @@ keys 1 to 11.
    <img src="img/screen-chords.png" width="240" alt="Steps on T3: a C chord on step 1 and a D minor on step 9, each named in its cell, with a bar under the steps they last" title="Two chords">
 5. **The conductor.** Turn **ALGORITHM** to COND and press **EDIT**. This is the conductor. It sets the key for
    every melodic track, and it starts in C major. While the pattern plays, play an F, then a G, then a C, and the
-   whole band follows you, in key.
+   whole band follows you, in key. The lit key is the chord's root, the key that plays the chord now sounding,
+   so you can see where the progression is. The same note in other octaves glows dimmer.
 
    To write a progression, press **SEQ**, turn **SELECT** to the Bar page and press black key 4, so each step
    lasts a beat. Go back to Steps. Hold **SEQ** and play a chord, then let go and press a step. Do the same for
@@ -168,7 +170,7 @@ Count the white keys 1 to 16 from the left, and the black keys 1 to 11. "Hold **
 | record while playing | While it plays, hold **REC** and play: it records for as long as you hold **REC**. Hold **REC** and press **PLAY** to keep recording on. |
 | record a knob's motion | While it plays, on a sound page, hold **REC** and turn the knob. The motion is recorded for as long as you hold **REC**. |
 | set the click, count-in, quantize | While stopped, hold **REC** and turn the knobs: CLICK, COUNT, QUANT and MODE (overdub or replace). |
-| record step by step | While stopped, on Steps, tap **REC**. The red cursor starts after the last note. Each key (or chord) you play is written there, and the cursor moves on. **OCT+** leaves a rest and **OCT−** goes back. Tap **REC** again to finish. |
+| record step by step | While stopped, on Steps, tap **REC**. The red cursor starts after the last note. Each key (or chord) you play is written there, and the cursor moves on. **OCT+** skips a step and **OCT−** goes back. Hold **REC** and press **OCT+** to clear a step and move on, or **OCT−** to go back and clear one. Tap **REC** again to finish. |
 | undo | Hold **HOME** and press **REC**. Hold **HOME** and press **PLAY** to redo. |
 | set the tempo | Press **HOME** and turn **KNOB 1**. Hold **HOME** while you turn it for tenths. On any page, you can also hold **HOME** and turn **SELECT**. |
 | use a throw | Press **FX** and turn **SELECT** to Throws. Hold a key: the lower octave works on the drums and the upper octave on the melodic tracks. Hold **REC** while it plays to record throws into the THROW track. <!-- hint: press FX; turn SELECT; white 1-16 --> |
@@ -447,9 +449,10 @@ the WEAVE track and bring it in by hand.
 
 **Set it up.** On a track, press **ARP** and turn **SELECT** to the last page, Weave. Press a black key to choose
 the track to weave in. Keys 1 to 8 are the tracks, 9 is COND and 10 is THROW, and pressing the same key again sets
-none. Then press a white key, 1 to 8, to choose its pattern. **KNOB 1** (WITH: the track), **KNOB 2** (PATTERN: its
-pattern) and **KNOB 3** (RULE) set the same things. The page spells it out in words ("T2 weaves with T1", "by
-rhythm: T2 P1's rhythm, T1 P1's pitch"). It draws a bar three ways: the track's own steps, the other pattern's
+none. Then press a white key, 1 to 8, to choose its pattern. **KNOB 1** (FROM: the track), **KNOB 2** (PATTERN: its
+pattern) and **KNOB 3** (RULE) set the same things. The page spells it out in words ("T1 P1 woven into T2 P1", "by
+rhythm: T2 P1's rhythm, T1 P1's pitch"). Only the track you set it up on changes: T2 plays woven, and T1 plays as it
+was. It draws a bar three ways: the track's own steps, the other pattern's
 steps, and what plays, with each step in the color of the pattern it comes from. If a pattern is longer than a
 bar, use **OCT+** and **OCT−** to go through its bars ("bar 2 of 4"). The last line tells you whether the weave
 plays (on), or which WEAVE track key brings it in. The rules:
@@ -510,8 +513,13 @@ melody's notes.
   else.
 - To record step by step, tap **REC** while stopped. On Steps, the keys become a keyboard, and a red cursor marks
   the step they write, starting after the pattern's last note. Play a key, or several keys together, to write the
-  step, and the cursor moves on when you let go. **OCT+** leaves a rest and **OCT−** goes back a step. On a drum
-  track, the sound is added to the step. Tap **REC** again to stop. Step recording works on the sound pages too,
+  step, and the cursor moves on when you let go. **OCT+** skips a step and **OCT−** goes back one, leaving them as
+  they are. To clear steps, hold **REC** and press **OCT+** to clear the step and move on (a rest), or **OCT−** to go
+  back and clear the step before, like backspace. On a drum track, the sound is added to the step. A MIDI keyboard (USB, Bluetooth or the jack) writes steps the same way
+  when it plays the track on the screen, on the track's own channel or on 12 to 16. Notes held together make a
+  chord, and the first note's velocity becomes the step's. The notes you hold on it are also what a step tap
+  writes next, with no need to hold **SEQ**, and in chord mode they write the held step. Tap **REC** again to
+  stop. Step recording works on the sound pages too,
   with a strip of the bar along the bottom of the screen.
 - Throws you hold while you record are written into the THROW track's pattern.
 
@@ -1082,7 +1090,7 @@ Press **ARP** and turn **KNOB 1** to pick the player: off, arp, strum, hold or r
 
 <img src="img/screen-players.png" width="240" alt="Players: the arp at 1/16, up, one octave, with C4 E4 G4 held" title="The arp">
 
-- **arp** plays the held notes one after another. Page 1 has the speed (1/4 to 1/64, with triplets), the pattern
+- **arp** plays the held notes one after another. Page 1 has the speed (1/4 to 1/64, with triplets and dotted 1/8 and 1/16), the pattern
   (up, down, up down 1, up down 2, as played, random) and the range. Page 2 has the note length, a style, glide
   and stereo. Page 3 is hold.
 - **strum** plays a chord from one key, built on that key in the conductor's key and scale. At first it plays a
@@ -1143,7 +1151,8 @@ that is playing.
 - COPY SCENE in the **SEL** list copies the scene that is playing. Switch to another scene and pick PASTE SCENE to
   make it the same again: its patterns, its mutes, the conductor's key and the weave. While playing, you hear the
   change at the next bar.
-- Turn **PRESETS** to cue the next scene for the next bar in the same way.
+- Turn **PRESETS** to cue the next scene for the next bar in the same way. It steps through the scenes you've
+  made and skips the empty ones, so a turn never makes a new scene.
 - Press an empty scene's key to turn it into a copy of the scene that is playing.
 - Hold a white key for a second to clear that scene. The playing scene keeps going while LOOM-8 asks you to
   confirm. Holding an empty scene's key does nothing.
@@ -1256,13 +1265,17 @@ under **SEQ**.
 | Effect | Knobs |
 | --- | --- |
 | chorus | rate, depth, feedback, width |
-| delay | time, fine, repeats, tone (how bright the repeats are); in **SEL**'s list, ping width |
+| delay | time (a note value, synced to the tempo), fine, repeats, tone (how bright the repeats are); in **SEL**'s list, ping width |
 | lofi | rate, bits, smooth, width |
 | phaser | freq, depth, rate, feedback |
 | reverb, plate | size, motion, tone, damp (how fast the tail darkens) |
 | reverb, the other modes (lush too) | size, decay, tone, damp |
 
   The effects return only the sound they make. The track's own sound stays on the track.
+
+  The delay's time runs from 1/32 to 1/4 of the tempo, with triplets and dotted values, and fine moves it up to 25 %
+  either way. The delay holds half a second, so it halves a time longer than that and the knob shows what plays. For
+  example, below 120 BPM a 1/4 shows "1/4 as 1/8", and below 90 BPM a 1/8D shows "1/8D as 1/16D".
 
   The reverb has eleven modes, and **PRESETS** steps through them after the phaser. **plate** is LOOM-8's own.
   Nine come from the PlayStation's sound chip, the reverbs its games used: **room**, **studio S**, **studio M** and
@@ -1449,6 +1462,14 @@ every track on its own. Each track's channel has the track at its level, before 
 character. The sends' effects and the master's EQ, color, compressor and pump are only on channels 1 and 2. A
 muted track's channel is silent. To set the level of all ten, use USB audio on Setup's **SEL** list. With
 **follows knob**, MASTER sets it. With **full**, the speaker follows MASTER and the recording stays at full level.
+With **stereo**, the master is recorded at full level as with **full**, and channels 3 to 10 are silent. Use it when
+you only record the master: sending the tracks takes some of LOOM-8's time, which a busy song may need.
+
+On Windows, a DAW such as Reaper uses one audio driver at a time. With WASAPI or ASIO, LOOM-8 and the device you
+listen on must run at the same rate. Most headphones and speakers are set to 48 kHz, so set yours to 44.1 kHz too:
+open Windows' Sound settings, choose the output device, and set its format to 44100 Hz. If it has to stay at
+48 kHz, choose DirectSound in your DAW instead, which converts between the two rates. A bridge such as ASIO4ALL also
+converts, but what you hear through it can distort. The recording itself stays clean.
 
 The TRS jack is MIDI in. Everything that comes in over USB works from it too, except SysEx: notes, CCs, Program
 Change, and MIDI clock with start and stop. The FM-1 has no MIDI out jack, so LOOM-8 sends only over USB and
@@ -1511,8 +1532,13 @@ projects.
 
 CC OUT is in Setup's **SEL** list (**GLO**) and is on to start with. With it on, when you turn a mapped knob or
 **SEL** row by hand, LOOM-8 sends its CC on its channel, if the track's MIDI OUT is on. FX and the master always
-send. LOOM-8 never sends back what comes in. It never sends locks, automation, presets or a kit's 91 / 93 either,
-because each sound's own send is a separate parameter, and it isn't mapped.
+send. Apart from mutes, LOOM-8 never sends back what comes in. It never sends locks, automation, presets or a
+kit's 91 / 93 either, because each sound's own send is a separate parameter, and it isn't mapped.
+
+Mutes are the exception. With CC OUT on, whenever a track's mute changes, LOOM-8 sends CC 9 on the track's channel
+(127 muted, 0 playing), if the track's MIDI OUT is on. It sends it however the mute changed: on the Mix page, by a
+solo, by a scene, or by a CC 9 that came in. That way a controller's mute pads follow LOOM-8. Since the value sent
+back is the one that came in, it changes nothing on the controller.
 
 SCENES OUT comes after CC OUT in Setup's **SEL** list and is off to start with. With it on, when the scene changes
 on LOOM-8 or when you load a project, LOOM-8 sends that scene's Program Change on channel 11. A scene change that
@@ -1610,6 +1636,48 @@ The aux tracks have their own **EDIT** pages:
 - THROW has latch.
 - WEAVE has latch.
 - FX I and FX II have the effect's four knobs. Page 2 has hp, lp and the send to FX II.
+
+## Troubleshooting
+
+To put the FM-1 in update mode, hold **REC** while you switch it on. If you installed m-bootloader with the web
+installer, the installer can reach the FM-1 from there, and holding **PLAY** instead opens m-bootloader's recovery
+menu. Without m-bootloader, **REC** starts the chip's own update mode, which only the rescue below can reach.
+
+If LOOM-8 crashes, it shows a red CRASH screen and restarts by itself a few seconds later. If you report the
+problem, include the numbers on that screen (a photo is easiest) and what you were doing.
+
+If LOOM-8 crashes twice in a row while starting, it starts in SAFE MODE instead. There's no sound, but USB works,
+so the web installer can reach it. Install LOOM-8 again, or put the stock firmware back from the same page. Press
+**PLAY** to try starting LOOM-8 normally again. If even safe mode fails twice, the FM-1 drops into the chip's own
+update mode, and only the rescue below can reach it.
+
+### Recovering an FM-1 that won't start
+
+An FM-1 in the chip's own update mode shows a blank screen, and neither the web installer nor M-VAVE's updater can
+see it. A script can put M-VAVE's firmware back, on a Mac, with the USB cable you already have. M-VAVE's own
+M-FLASHER can do the same.
+
+Open Terminal, paste this line and press Return:
+
+```
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/hugelton/felucca-bsp/main/tools/fm1_rescue.sh)"
+```
+
+1. If a window asks to install the command line developer tools, click Install. When it's finished, paste the line
+   again.
+2. If it asks for a password, type your Mac password (nothing shows as you type) and press Return.
+3. When it says it's waiting, plug the FM-1 in and switch it on. If it starts normally instead, switch it off, then
+   hold **REC** while you switch it back on. The script catches it and checks the chip. It saves a backup of the
+   FM-1's memory in the `fm1-rescue` folder in your home folder, and asks before it writes anything.
+4. Type **yes** and press Return. Don't unplug anything until it says it's restarting the FM-1. The FM-1 then
+   starts into its original firmware, and you can install LOOM-8 again from there.
+
+The script downloads M-VAVE's FM-1 firmware (V16 and V15) and JieLi's flash loader, and checks them against known
+fingerprints. It writes only the firmware area of the memory, never the bootloader or the FM-1's own settings, and
+it checks everything it writes. Running it again is always safe. If it fails, copy everything in the Terminal
+window and [open an issue](https://github.com/charlesvestal/fm1-loom/issues). If the FM-1 never shows up at all,
+Felucca's [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter) can still reach it. It's a small
+RP2040 board wired to the USB lines.
 
 ## Screen reader
 
