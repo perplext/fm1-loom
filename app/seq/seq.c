@@ -92,7 +92,8 @@ static const int8_t GROOVE_V[NGROOVE][16] = {
 static const int8_t SIN32[32] = {0, 25, 49, 71, 90, 106, 117, 125, 127, 125, 117, 106, 90, 71, 49, 25,
                                  0, -25, -49, -71, -90, -106, -117, -125, -127, -125, -117, -106, -90, -71, -49, -25};
 /* the arp's speeds: the period in sixteenths as NUM / DEN */
-static const uint8_t ARP_NUM[9] = {4, 8, 2, 4, 1, 2, 1, 1, 1}, ARP_DEN[9] = {1, 3, 1, 3, 1, 3, 2, 3, 4};
+static const uint8_t ARP_NUM[NARPSPD] = {4, 3, 8, 2, 3, 4, 1, 2, 1, 1, 1},
+                     ARP_DEN[NARPSPD] = {1, 1, 3, 1, 2, 3, 1, 3, 2, 3, 4};
 
 const char *const PUNCH_NAME[NPUNCH] = {"mute", "stutter", "repeat", "echo", "build", "floor", "jumble",
                                         "warble", "pan", "octave", "chop", "ring"};
@@ -627,6 +628,14 @@ static void brain_set_root(seq_t *s, int root)
     int d = note_to_deg(root, s->brain_key, mask) - note_to_deg(60 + s->brain_key, s->brain_key, mask);
     d = d < -64 ? -64 : d > 63 ? 63 : d;
     s->brain_deg = (uint8_t)(int8_t)d;
+}
+
+/* the root note the degree stands for (what pressing it on the conductor's keys sets): brain_set_root undone */
+int seq_brain_root(const seq_t *s)
+{
+    uint16_t mask = scale_mask(s->brain_scale < NBS ? s->brain_scale : BS_MAJOR);
+    int key = s->brain_key % 12;
+    return deg_to_note(note_to_deg(60 + key, key, mask) + brain_deg(s), key, mask);
 }
 
 /* the degree a FOLLOW track's note sets: its place in the scale whatever its octave, the nearer way (in C major a
@@ -2300,8 +2309,8 @@ static void held_remove(player_t *pl, int note)
 static uint32_t arp_period(const seq_t *s, int t)
 {
     int sp = s->par[t][TP_P1];
-    if (sp > 8)
-        sp = 8;
+    if (sp > NARPSPD - 1)
+        sp = NARPSPD - 1;
     return six_q8(s) / ARP_DEN[sp] * ARP_NUM[sp];
 }
 
@@ -3308,6 +3317,49 @@ static void six_tick(seq_t *s, const seq_sink_t *o)
     s->six_to_next = s->ext ? NEVER : carry + six_q8(s);
 }
 
+/* the clock in's tempo, from one tick more (D samples after the last). A tick is seen at its block's start, so one
+ * tick's time is out by up to a block (5.8 ms, a fifth of a tick at 89 BPM): the tempo is the ticks over the time
+ * since the clock came (or changed tempo), halved past 8 s so a slow drift is followed, and it moves only when that
+ * leaves it by 0.3 %, to a tenth of a BPM. Tick by tick it swung 88-90 BPM, and the delay, timed by it, bent its
+ * echoes (up to 4 semitones). A beat 3 % off the tempo is a new tempo, from that beat */
+static void ext_tempo(seq_t *s, uint32_t d)
+{
+    float est, raw;
+    if (d >= SEQ_FS / 2u || !s->ext_lock) {  /* a new clock (or one back after a gap): count from this tick */
+        s->ext_t = s->ext_beat = 0;
+        s->ext_n = 0;
+        s->ext_bn = 0;
+        s->ext_lock = 1;
+        return;
+    }
+    s->ext_t += d;
+    s->ext_beat += d;
+    s->ext_n++;
+    if (!s->ext_t)
+        return;
+    est = (float)SEQ_FS * 60.0f * (float)s->ext_n / (24.0f * (float)s->ext_t);
+    if (++s->ext_bn < 24) {
+        if (s->ext_lock == 1)             /* the first beat: the tempo so far */
+            s->ext_bpm = est;
+        return;
+    }
+    raw = (float)SEQ_FS * 60.0f / (float)s->ext_beat;
+    if (raw > est * 1.03f || raw < est * 0.97f) {
+        s->ext_t = s->ext_beat;
+        s->ext_n = 24;
+        est = raw;
+    }
+    if (s->ext_t > 8u * SEQ_FS) {
+        s->ext_t >>= 1;
+        s->ext_n >>= 1;
+    }
+    s->ext_beat = 0;
+    s->ext_bn = 0;
+    if (s->ext_lock == 1 || est > s->ext_bpm * 1.003f || est < s->ext_bpm * 0.997f)
+        s->ext_bpm = (float)(int32_t)(est * 10.0f + 0.5f) * 0.1f;
+    s->ext_lock = 2;
+}
+
 /* external clock ticks: arm the sixteenth and the steps they complete */
 static void ext_ticks(seq_t *s)
 {
@@ -3315,11 +3367,7 @@ static void ext_ticks(seq_t *s)
     int t;
     s->ext_pending = 0;
     for (; n; n--) {
-        if (s->ext_since > 0 && s->ext_since < SEQ_FS) {
-            uint32_t q = s->ext_since << 8;
-            s->ext_period = s->ext_period ? s->ext_period - (s->ext_period >> 3) + (q >> 3) : q;
-            s->ext_bpm = (float)SEQ_FS * 60.0f * 256.0f / (24.0f * (float)s->ext_period);
-        }
+        ext_tempo(s, s->ext_since);
         s->ext_since = 0;
         if (!s->playing || s->rec_wait)
             continue;
@@ -3468,7 +3516,6 @@ void seq_advance(seq_t *s, uint32_t k, const seq_sink_t *o)
     brain_follow_par(s);
     if (s->req_stop) {
         s->req_stop = 0;
-        s->req_start = s->req_cont = 0;
         s->wv_rec = 0;                /* (the recorded weaves end with the transport) */
         for (t = 0; t < NSEQT; t++)
             s->wv_left[t] = 0, s->wv_rec_at[t] = 0xFF;
@@ -3679,7 +3726,13 @@ void seq_start(seq_t *s, int from_start)
     else
         s->req_cont = 1;
 }
-void seq_stop(seq_t *s) { s->req_stop = 1; }
+void seq_stop(seq_t *s)
+{
+    /* Cancel only requests older than this Stop. A subsequent Start/Continue
+     * queued before seq_advance must survive the deferred Stop cleanup. */
+    s->req_start = s->req_cont = 0;
+    s->req_stop = 1;
+}
 void seq_continue(seq_t *s) { s->req_cont = 1; }
 void seq_ext_clock(seq_t *s)
 {
