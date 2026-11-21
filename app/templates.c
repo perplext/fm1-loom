@@ -4,20 +4,18 @@
  * track, the two effect tracks, the master. HOME > SEL > TEMPLATE turns through them; SEL asks, then replaces the
  * project (as NEW PROJECT does). The player edits everything after: a template is a starting point. */
 #include "library.h"
+#include "preset_ids.h"                 /* PI_<ENGINE>_<NAME>: PRESETS' indices (tools/gen_presets.py) */
 
 #define TPL_NSCENE 3
-#define TPL_NSET 6                        /* knob overrides a track */
 typedef struct {
-    uint8_t trk;                          /* 1..8 */
-    const char *preset;                   /* a factory preset's name (its engine with it); 0 = leave the track */
-    uint8_t engine;                       /* the engine the preset belongs to (names repeat across engines) */
+    uint8_t preset;                       /* a factory preset, PI_* */
     uint8_t follow;                       /* BM_* */
     uint8_t level, send1, send2;          /* 255 = the preset's */
     uint8_t part;                         /* what it plays, PT_* (its pattern 1, in the key; the conductor moves it) */
-    uint16_t set[TPL_NSET];               /* knob overrides, SET(p, v): the parameter in the high bits, its value (0..127)
-                                             in the low seven (0: none) */
+    uint8_t so, sn;                       /* its knob overrides: sn of TPL_SETS from so */
 } tpl_trk_t;
-#define SET(p, v) ((uint16_t)((p) << 7 | (v)))
+#define TPL_NTRK 4                        /* tracks 2..5 (track 1 is the kit) */
+#define SET(p, v) ((uint16_t)((p) << 7 | (v)))   /* a knob override: the parameter in the high bits, its value (0..127) below */
 /* the parts: the root held a bar, the root in eighths, a triad held a bar (a harmony follower makes it the chord),
  * a riff of sixteenths on the scale's first five degrees, a held triad through the arp player, the root in a halftime
  * reggae-ish skank (offbeat eighths), a tremolo-picked root (sixteenths, a multiply on each) */
@@ -30,82 +28,88 @@ struct tpl {
     uint8_t prog;                         /* a library progression, 1 + its index (PROGS; 0 none) */
     uint8_t key;                          /* 0..11 */
     uint8_t song[TPL_NSCENE];             /* bars a scene in the song (0 = not in the song) */
-    tpl_trk_t t[5];                       /* up to five tracks after the kit (trk 0 ends the list) */
+    tpl_trk_t t[TPL_NTRK];                /* tracks 2..5, in order */
     uint8_t fx1, fx2;                     /* NFXPICK picks */
     uint8_t fx1k[4], fx2k[4];
     uint8_t mst[NMS];                     /* the master: lo mid hi - color camt ctone cmix perc mel comp pump pumpby rel acc level */
-    uint8_t groove;
 };
 
 #define FXP_DELAY FXT_DELAY
 #define FXP_CHORUS FXT_CHORUS
 #define FXP(mode) (FXT_REVERB + (mode))
 #define MST_FLAT {64, 64, 64, 0, MC_OFF, 64, 64, 127, 100, 100, 30, 0, 0, 60, 0, 100}
+static const uint16_t TPL_SETS[] = {
+    SET(TP_OCT, 1), SET(TP_OCT, 1), SET(TP_CTYPE, CT_DRIVE), SET(TP_CAMT, 80),
+    SET(TP_CMIX, 90), SET(TP_OCT, 2), SET(TP_LTYPE, LT_WOBBLE), SET(TP_LSPEED, 6),
+    SET(TP_LDEST, 127), SET(TP_LX2, 3), SET(TP_CTYPE, CT_DRIVE), SET(TP_CAMT, 90),
+    SET(TP_OCT, 2), SET(TP_OCT, 1), SET(TP_OCT, 3), SET(TP_A, 90),
+    SET(TP_R, 100), SET(TP_A, 100), SET(TP_R, 110), SET(TP_CTYPE, CT_TAPE),
+    SET(TP_CAMT, 70), SET(TP_CMIX, 100), SET(TP_A, 40), SET(TP_R, 60),
+    SET(TP_R, 60), SET(TP_A, 60), SET(TP_R, 100), SET(TP_OCT, 1),
+    SET(TP_OCT, 1), SET(TP_CTYPE, CT_OFF), SET(TP_CTYPE, CT_TAPE), SET(TP_CAMT, 40),
+    SET(TP_LTYPE, LT_WAVE), SET(TP_LSPEED, 4), SET(TP_LAMT, 127), SET(TP_LDEST, 2),
+    SET(TP_LX, 0), SET(TP_RES, 60), SET(TP_OCT, 1), SET(TP_LTYPE, LT_WAVE),
+    SET(TP_LSPEED, 5), SET(TP_LAMT, 110), SET(TP_LDEST, 2), SET(TP_LTYPE, LT_WAVE),
+    SET(TP_LSPEED, 3), SET(TP_LAMT, 120), SET(TP_LDEST, 2), SET(TP_LX, 0),
+    SET(TP_OCT, 1), SET(TP_LSPEED, 5), SET(TP_OCT, 1), SET(TP_OCT, 1),
+};
 static const tpl_t TEMPLATES[] = {
     {"doomgaze", "blackgaze", 1600, 3, {13, 10, 11}, 17, 4, {4, 2, 2},  /* doom / blast / hyperblast; doom descent */
-     {{2, "doom wall", EG_WALL, BM_TRANSPOSE, 96, 25, 75, PT_TRIAD, {SET(TP_OCT, 1)}},
-      {3, "round sub", EG_KNIT, BM_TRANSPOSE, 108, 0, 0, PT_ROOT, {SET(TP_OCT, 1), SET(TP_CTYPE, CT_DRIVE), SET(TP_CAMT, 80), SET(TP_CMIX, 90)}},
-      {4, "blown out", EG_WALL, BM_HARMONY, 86, 20, 70, PT_TRIAD, {SET(TP_OCT, 2)}},
-      {5, "soft lead", EG_KNIT, BM_HARMONY, 78, 40, 80, PT_TREMOLO, {SET(TP_LTYPE, LT_WOBBLE), SET(TP_LSPEED, 6), SET(TP_LDEST, 127), SET(TP_LX2, 3), SET(TP_CTYPE, CT_DRIVE), SET(TP_CAMT, 90)}},
-      {0}},
+     {{PI_WALL_DOOM_WALL, BM_TRANSPOSE, 96, 25, 75, PT_TRIAD, 0, 1},
+      {PI_KNIT_ROUND_SUB, BM_TRANSPOSE, 108, 0, 0, PT_ROOT, 1, 4},
+      {PI_WALL_BLOWN_OUT, BM_HARMONY, 86, 20, 70, PT_TRIAD, 5, 1},
+      {PI_KNIT_SOFT_LEAD, BM_HARMONY, 78, 40, 80, PT_TREMOLO, 6, 6}},
      FXP_DELAY, FXP(RV_SHIMMER), {72, 64, 50, 70}, {100, 112, 75, 40},
-     {80, 70, 64, 0, MC_TAPE, 105, 60, 100, 104, 100, 60, 0, 0, 60, 0, 108}, GR_SWING},
+     {80, 70, 64, 0, MC_TAPE, 105, 60, 100, 104, 100, 60, 0, 0, 60, 0, 108}},
     {"blackgaze", "blackgaze", 1900, 3, {10, 15, 11}, 14, 4, {4, 4, 4},  /* blast / skank / hyperblast; phrygian 5ths */
-     {{2, "wall", EG_WALL, BM_TRANSPOSE, 92, 25, 75, PT_TRIAD, {SET(TP_OCT, 2)}},
-      {3, "round sub", EG_KNIT, BM_TRANSPOSE, 105, 0, 0, PT_ROOT8, {SET(TP_OCT, 1)}},
-      {4, "blown out", EG_WALL, BM_HARMONY, 80, 40, 80, PT_TRIAD, {SET(TP_OCT, 3)}},
-      {5, "ooh choir", EG_VOILE, BM_HARMONY, 70, 20, 90, PT_ROOT, {SET(TP_A, 90), SET(TP_R, 100)}},
-      {0}},
+     {{PI_WALL_WALL, BM_TRANSPOSE, 92, 25, 75, PT_TRIAD, 12, 1},
+      {PI_KNIT_ROUND_SUB, BM_TRANSPOSE, 105, 0, 0, PT_ROOT8, 13, 1},
+      {PI_WALL_BLOWN_OUT, BM_HARMONY, 80, 40, 80, PT_TRIAD, 14, 1},
+      {PI_VOILE_OOH_CHOIR, BM_HARMONY, 70, 20, 90, PT_ROOT, 15, 2}},
      FXP_DELAY, FXP(RV_SHIMMER), {72, 64, 50, 70}, {100, 112, 80, 40},
-     {72, 64, 64, 0, MC_TAPE, 70, 70, 100, 100, 100, 45, 0, 0, 60, 0, 104}, GR_SWING},
+     {72, 64, 64, 0, MC_TAPE, 70, 70, 100, 100, 100, 45, 0, 0, 60, 0, 104}},
     {"dungeon", "dungeon", 700, 0, {1, 2, 4}, 1, 2, {4, 4, 4},  /* crypt march / torchlight / procession; i VI III VII */
-     {{2, "ooh choir", EG_VOILE, BM_HARMONY, 95, 0, 90, PT_TRIAD, {SET(TP_A, 100), SET(TP_R, 110), SET(TP_CTYPE, CT_TAPE), SET(TP_CAMT, 70), SET(TP_CMIX, 100)}},
-      {3, "church", EG_BELLOWS, BM_HARMONY, 80, 20, 60, PT_TRIAD, {SET(TP_A, 40), SET(TP_R, 60)}},
-      {4, "nylon", EG_CANE, BM_DIATONIC, 92, 55, 45, PT_ARP, {SET(TP_R, 60)}},
-      {5, "round sub", EG_KNIT, BM_TRANSPOSE, 95, 0, 0, PT_ROOT, {SET(TP_A, 60), SET(TP_R, 100), SET(TP_OCT, 1)}},
-      {0}},
+     {{PI_VOILE_OOH_CHOIR, BM_HARMONY, 95, 0, 90, PT_TRIAD, 17, 5},
+      {PI_BELLOWS_CHURCH, BM_HARMONY, 80, 20, 60, PT_TRIAD, 22, 2},
+      {PI_CANE_NYLON, BM_DIATONIC, 92, 55, 45, PT_ARP, 24, 1},
+      {PI_KNIT_ROUND_SUB, BM_TRANSPOSE, 95, 0, 0, PT_ROOT, 25, 3}},
      FXP_DELAY, FXP(RV_SHIMMER), {88, 64, 60, 45}, {110, 118, 45, 70},
-     {70, 60, 56, 0, MC_TAPE, 50, 50, 90, 100, 100, 30, 0, 0, 60, 0, 100}, GR_SWING},
+     {70, 60, 56, 0, MC_TAPE, 50, 50, 90, 100, 100, 30, 0, 0, 60, 0, 100}},
     {"darkwave", "darkwave", 1100, 2, {6, 8, 7}, 9, 9, {4, 4, 4},  /* darkwave / gated snare / coldwave; vi IV I V */
-     {{2, "finger bass", EG_KNIT, BM_TRANSPOSE, 105, 0, 10, PT_ROOT8, {SET(TP_OCT, 1)}},
-      {3, "dusty pad", EG_KNIT, BM_HARMONY, 80, 0, 60, PT_TRIAD, {SET(TP_CTYPE, CT_OFF)}},
-      {4, "mellow ep", EG_RAYON, BM_HARMONY, 84, 35, 45, PT_ARP, {0}},
-      {5, "soft lead", EG_KNIT, BM_DIATONIC, 82, 45, 55, PT_RIFF, {SET(TP_CTYPE, CT_TAPE), SET(TP_CAMT, 40)}},
-      {0}},
+     {{PI_KNIT_FINGER_BASS, BM_TRANSPOSE, 105, 0, 10, PT_ROOT8, 28, 1},
+      {PI_KNIT_DUSTY_PAD, BM_HARMONY, 80, 0, 60, PT_TRIAD, 29, 1},
+      {PI_RAYON_MELLOW_EP, BM_HARMONY, 84, 35, 45, PT_ARP, 0, 0},
+      {PI_KNIT_SOFT_LEAD, BM_DIATONIC, 82, 45, 55, PT_RIFF, 30, 2}},
      FXP_CHORUS, FXP(RV_HALL), {50, 86, 20, 127}, {127, 64, 64, 0},
-     {64, 64, 70, 0, MC_TAPE, 35, 80, 100, 100, 100, 40, 0, 0, 60, 0, 104}, GR_SWING},
+     {64, 64, 70, 0, MC_TAPE, 35, 80, 100, 100, 100, 40, 0, 0, 60, 0, 104}},
     {"dubstep", "dubstep", 1400, 2, {17, 18, 19}, 20, 5, {4, 4, 4},  /* dubstep / dubstep 2 / halftime; i VI VII */
-     {{2, "reese", EG_KNIT, BM_TRANSPOSE, 100, 0, 10, PT_ROOT, {SET(TP_LTYPE, LT_WAVE), SET(TP_LSPEED, 4), SET(TP_LAMT, 127), SET(TP_LDEST, 2), SET(TP_LX, 0), SET(TP_RES, 60)}},
-      {3, "round sub", EG_KNIT, BM_TRANSPOSE, 110, 0, 0, PT_ROOT, {SET(TP_OCT, 1)}},
-      {4, "growl", EG_JACQUARD, BM_TRANSPOSE, 90, 10, 20, PT_OFFBEAT, {SET(TP_LTYPE, LT_WAVE), SET(TP_LSPEED, 5), SET(TP_LAMT, 110), SET(TP_LDEST, 2)}},
-      {5, "whisper pad", EG_VOILE, BM_HARMONY, 70, 0, 80, PT_TRIAD, {0}},
-      {0}},
+     {{PI_KNIT_REESE, BM_TRANSPOSE, 100, 0, 10, PT_ROOT, 32, 6},
+      {PI_KNIT_ROUND_SUB, BM_TRANSPOSE, 110, 0, 0, PT_ROOT, 38, 1},
+      {PI_JACQUARD_GROWL, BM_TRANSPOSE, 90, 10, 20, PT_OFFBEAT, 39, 4},
+      {PI_VOILE_WHISPER_PAD, BM_HARMONY, 70, 0, 80, PT_TRIAD, 0, 0}},
      FXP_DELAY, FXP(RV_LUSH), {72, 64, 50, 60}, {70, 80, 56, 48},
-     {76, 64, 64, 0, MC_OFF, 64, 64, 127, 104, 100, 55, 60, 0, 60, 0, 108}, GR_SWING},
+     {76, 64, 64, 0, MC_OFF, 64, 64, 127, 104, 100, 55, 60, 0, 60, 0, 108}},
     {"drumstep", "drumstep", 1740, 2, {20, 21, 23}, 21, 7, {4, 4, 4},  /* drumstep / drumstep 2 / two step; i iv VI v */
-     {{2, "reese", EG_KNIT, BM_TRANSPOSE, 100, 0, 10, PT_ROOT, {SET(TP_LTYPE, LT_WAVE), SET(TP_LSPEED, 3), SET(TP_LAMT, 120), SET(TP_LDEST, 2), SET(TP_LX, 0)}},
-      {3, "round sub", EG_KNIT, BM_TRANSPOSE, 110, 0, 0, PT_ROOT8, {SET(TP_OCT, 1)}},
-      {4, "house stab", EG_KNIT, BM_HARMONY, 78, 40, 30, PT_OFFBEAT, {0}},
-      {5, "wobble", EG_JACQUARD, BM_TRANSPOSE, 86, 10, 25, PT_ROOT, {SET(TP_LSPEED, 5)}},
-      {0}},
+     {{PI_KNIT_REESE, BM_TRANSPOSE, 100, 0, 10, PT_ROOT, 43, 5},
+      {PI_KNIT_ROUND_SUB, BM_TRANSPOSE, 110, 0, 0, PT_ROOT8, 48, 1},
+      {PI_KNIT_HOUSE_STAB, BM_HARMONY, 78, 40, 30, PT_OFFBEAT, 0, 0},
+      {PI_JACQUARD_WOBBLE, BM_TRANSPOSE, 86, 10, 25, PT_ROOT, 49, 1}},
      FXP_DELAY, FXP(RV_LUSH), {72, 64, 56, 64}, {64, 70, 56, 48},
-     {72, 64, 64, 0, MC_OFF, 64, 64, 127, 104, 100, 55, 55, 0, 50, 0, 108}, GR_SWING},
+     {72, 64, 64, 0, MC_OFF, 64, 64, 127, 104, 100, 55, 55, 0, 50, 0, 108}},
     {"jungle", "dnb", 1700, 2, {24, 25, 23}, 24, 9, {4, 4, 4},  /* amen / jungle / two step; liquid */
-     {{2, "round sub", EG_KNIT, BM_TRANSPOSE, 108, 0, 0, PT_ROOT, {SET(TP_OCT, 1)}},
-      {3, "reese", EG_KNIT, BM_TRANSPOSE, 92, 10, 20, PT_ROOT, {0}},
-      {4, "glass pad", EG_RAYON, BM_HARMONY, 76, 20, 60, PT_TRIAD, {0}},
-      {5, "organ stab", EG_BELLOWS, BM_HARMONY, 80, 45, 30, PT_OFFBEAT, {0}},
-      {0}},
+     {{PI_KNIT_ROUND_SUB, BM_TRANSPOSE, 108, 0, 0, PT_ROOT, 50, 1},
+      {PI_KNIT_REESE, BM_TRANSPOSE, 92, 10, 20, PT_ROOT, 0, 0},
+      {PI_RAYON_GLASS_PAD, BM_HARMONY, 76, 20, 60, PT_TRIAD, 0, 0},
+      {PI_BELLOWS_ORGAN_STAB, BM_HARMONY, 80, 45, 30, PT_OFFBEAT, 0, 0}},
      FXP_DELAY, FXP(RV_HALL), {76, 64, 60, 50}, {110, 64, 64, 0},
-     {68, 64, 66, 0, MC_OFF, 64, 64, 127, 102, 100, 50, 30, 0, 60, 0, 106}, GR_SWING},
+     {68, 64, 66, 0, MC_OFF, 64, 64, 127, 102, 100, 50, 30, 0, 60, 0, 106}},
     {"techno", "techno", 1320, 2, {27, 28, 26}, 23, 0, {4, 4, 4},  /* techno / dub techno / four floor; i bII */
-     {{2, "finger bass", EG_KNIT, BM_TRANSPOSE, 100, 0, 10, PT_ROOT8, {SET(TP_OCT, 1)}},
-      {3, "house stab", EG_KNIT, BM_HARMONY, 80, 50, 40, PT_OFFBEAT, {0}},
-      {4, "acid line", EG_ACID, BM_DIATONIC, 88, 30, 20, PT_RIFF, {0}},
-      {5, "dusty pad", EG_KNIT, BM_HARMONY, 70, 0, 70, PT_TRIAD, {0}},
-      {0}},
+     {{PI_KNIT_FINGER_BASS, BM_TRANSPOSE, 100, 0, 10, PT_ROOT8, 51, 1},
+      {PI_KNIT_HOUSE_STAB, BM_HARMONY, 80, 50, 40, PT_OFFBEAT, 0, 0},
+      {PI_ACID_ACID_LINE, BM_DIATONIC, 88, 30, 20, PT_RIFF, 0, 0},
+      {PI_KNIT_DUSTY_PAD, BM_HARMONY, 70, 0, 70, PT_TRIAD, 0, 0}},
      FXP_DELAY, FXP(RV_SPACE_ECHO), {74, 64, 60, 55}, {127, 70, 64, 10},
-     {70, 64, 64, 0, MC_OFF, 64, 64, 127, 102, 100, 45, 50, 0, 60, 0, 106}, GR_SWING},
+     {70, 64, 64, 0, MC_OFF, 64, 64, 127, 102, 100, 45, 50, 0, 60, 0, 106}},
 };
 #define NTEMPLATES ((int)(sizeof TEMPLATES / sizeof TEMPLATES[0]))
 static int tpl_count(void) { return NTEMPLATES; }
@@ -114,13 +118,6 @@ static const char *tpl_genre(const tpl_t *t) { return t->genre; }
 static const tpl_t *tpl_get(int i) { return &TEMPLATES[((i % NTEMPLATES) + NTEMPLATES) % NTEMPLATES]; }
 
 /* the template onto the project: a new project, then its parts (ui.c's helpers: this file is included after it) */
-static int preset_find(const char *name, int engine)
-{
-    for (int k = 0; k < NPRESETS; k++)
-        if (PRESETS[k].par[TP_ENGINE] == engine && lib_streq(PRESETS[k].name, name))
-            return k;
-    return -1;
-}
 /* a part onto a track's pattern 1 in the key (C3 + key the root; the conductor's follow moves it to the chords) */
 static void tpl_part(tpat_t *pt, int part, int key, uint8_t *par)
 {
@@ -192,7 +189,6 @@ static void template_apply(int i)
     project_defaults();
     s_cat(proj.name, tp->name);
     proj.tempo_x10 = tp->tempo_x10;
-    proj.groove = tp->groove;
     after_load();
     /* the kit, and a beat a scene on track 1's patterns 1..3 */
     kit_factory(tp->kit % NFKITS, img);
@@ -218,21 +214,16 @@ static void template_apply(int i)
         pats.scene[sc].brain_scale = (uint8_t)(scale >= 0 ? scale : BS_MINOR);
     }
     /* the tracks: a preset, its role, its level and sends, the overrides; every track sends notes on its channel */
-    for (t = 0; t < 5 && tp->t[t].trk; t++) {
+    for (t = 0; t < TPL_NTRK; t++) {
         const tpl_trk_t *tt = &tp->t[t];
-        int trk = tt->trk - 1, pi = preset_find(tt->preset, tt->engine);
-        if (trk < 0 || trk >= NTRK)
-            continue;
-        if (pi >= 0)
-            load_preset(trk, &PRESETS[pi]);
-        else
-            sound_default(proj.trk[trk].par, tt->engine);
+        int trk = t + 1;
+        load_preset(trk, &PRESETS[tt->preset]);
         proj.trk[trk].par[TP_BRAIN] = tt->follow;
         if (tt->level != 255) proj.trk[trk].par[TP_LEVEL] = tt->level;
         if (tt->send1 != 255) proj.trk[trk].par[TP_SEND1] = tt->send1;
         if (tt->send2 != 255) proj.trk[trk].par[TP_SEND2] = tt->send2;
-        for (k = 0; k < TPL_NSET && tt->set[k]; k++)
-            proj.trk[trk].par[(tt->set[k] >> 7) % NTP] = (uint8_t)(tt->set[k] & 127);
+        for (k = 0; k < tt->sn; k++)
+            proj.trk[trk].par[(TPL_SETS[tt->so + k] >> 7) % NTP] = (uint8_t)(TPL_SETS[tt->so + k] & 127);
         tpl_part(&pats.pat[trk][0], tt->part, tp->key % 12, proj.trk[trk].par);
         engine_set_all(trk);
     }
